@@ -32,12 +32,18 @@ export function calcBBI(candles) {
 
 export function calcEMA(values, period) {
   // MACD 依赖 EMA，因此单独抽出来复用。
+  // 用前 period 个点的 SMA 作初始值，与同花顺/东方财富标准对齐。
   const multiplier = 2 / (period + 1);
   const result = [];
   values.forEach((value, index) => {
     const numeric = toNumber(value);
-    if (index === 0) {
-      result.push(numeric);
+    if (index < period - 1) {
+      result.push(null);
+      return;
+    }
+    if (index === period - 1) {
+      const sma = values.slice(0, period).reduce((sum, v) => sum + toNumber(v), 0) / period;
+      result.push(round(sma, 4));
       return;
     }
     const previous = result[index - 1];
@@ -48,17 +54,25 @@ export function calcEMA(values, period) {
 
 export function calcMACD(candles, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
   // 标准 MACD：DIF = EMA12 - EMA26，DEA 为 DIF 的 EMA9，柱状图 = (DIF - DEA) * 2
+  // EMA 初始阶段返回 null，DIF/DEA/histogram 同样传递 null 直到数据足够。
   const closes = candles.map((candle) => toNumber(candle.close));
   const emaShort = calcEMA(closes, shortPeriod);
   const emaLong = calcEMA(closes, longPeriod);
-  const dif = closes.map((_, index) => round(emaShort[index] - emaLong[index], 4));
-  const dea = calcEMA(dif, signalPeriod);
-  const histogram = dif.map((value, index) => round((value - dea[index]) * 2, 4));
+  const dif = closes.map((_, index) => {
+    if (emaShort[index] === null || emaLong[index] === null) return null;
+    return round(emaShort[index] - emaLong[index], 4);
+  });
+  const dea = calcEMA(dif.map((v) => v ?? 0), signalPeriod);
+  const histogram = dif.map((value, index) => {
+    if (value === null || dea[index] === null) return null;
+    return round((value - dea[index]) * 2, 4);
+  });
 
+  const warmupLength = longPeriod - 1 + signalPeriod - 1;
   return candles.map((_, index) => ({
-    dif: dif[index],
-    dea: dea[index],
-    histogram: histogram[index]
+    dif: index < warmupLength ? null : dif[index],
+    dea: index < warmupLength ? null : dea[index],
+    histogram: index < warmupLength ? null : histogram[index]
   }));
 }
 

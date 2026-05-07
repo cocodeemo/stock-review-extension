@@ -18,6 +18,10 @@
         </div>
         <form id="settingsForm" class="settings-grid">
           <label>
+            <span>K线历史天数（用于均线/MACD计算，建议 60-250）</span>
+            <input name="klineDays" type="number" min="30" max="500">
+          </label>
+          <label>
             <span>复盘提醒时间</span>
             <input name="reviewReminderTime" type="time">
           </label>

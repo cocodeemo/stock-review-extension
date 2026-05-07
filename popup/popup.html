@@ -59,14 +59,22 @@
             </div>
             <div class="detail-head-right">
               <div id="selectedScore" class="score-pill">-- 分</div>
-              <button id="closeDetailBtn" class="close-detail-btn" title="关闭">×</button>
+              <button id="closeDetailBtn" class="back-btn" title="返回">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m15 18-6-6 6-6"/>
+                </svg>
+              </button>
             </div>
           </div>
 
           <div id="metricGrid" class="metric-grid"></div>
 
           <div class="chart-card">
-            <canvas id="detailCanvas" width="432" height="160"></canvas>
+            <div class="chart-tabs-mini">
+              <button id="detailIntradayBtn" class="chart-tab-btn">分时</button>
+              <button id="detailDailyBtn" class="chart-tab-btn active-tab-mini">日K</button>
+            </div>
+            <canvas id="detailCanvas" width="432" height="200"></canvas>
           </div>
 
           <div class="detail-bottom">

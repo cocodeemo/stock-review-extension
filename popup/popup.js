@@ -1,4 +1,4 @@
-import { drawCandles } from "../shared/chart.js";
+import { drawCandles, drawIntradayLine } from "../shared/chart.js";
 import { fetchSinaSuggestions, fetchStockUniverse } from "../shared/market-api.js";
 import { ensureDefaults, getState, saveWatchlist } from "../shared/storage.js";
 import { applyTheme, renderBadge } from "../shared/ui.js";
@@ -22,13 +22,81 @@ const missedRules = document.getElementById("missedRules");
 const detailCanvas = document.getElementById("detailCanvas");
 const headerStatus = document.getElementById("headerStatus");
 const detailPanel = document.querySelector(".detail-panel");
+const detailIntradayBtn = document.getElementById("detailIntradayBtn");
+const detailDailyBtn = document.getElementById("detailDailyBtn");
+
+let detailChartMode = "daily";
+let detailIntradayData = [];
+let detailCrosshairIndex = -1;
+let detailRenderState = null;
 
 function showDetailPanel() {
   detailPanel.classList.add("visible");
+  // 等布局完成后重绘，避免 clientWidth 为 0
+  requestAnimationFrame(() => renderDetailChart());
 }
 
 function hideDetailPanel() {
   detailPanel.classList.remove("visible");
+}
+
+detailIntradayBtn.addEventListener("click", async () => {
+  detailChartMode = "intraday";
+  detailIntradayBtn.classList.add("active-tab-mini");
+  detailDailyBtn.classList.remove("active-tab-mini");
+  await fetchDetailIntraday();
+  renderDetailChart();
+});
+
+detailDailyBtn.addEventListener("click", () => {
+  detailChartMode = "daily";
+  detailDailyBtn.classList.add("active-tab-mini");
+  detailIntradayBtn.classList.remove("active-tab-mini");
+  renderDetailChart();
+});
+
+detailCanvas.addEventListener("mousemove", (event) => {
+  const rect = detailCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const data = detailChartMode === "intraday" ? detailIntradayData : null;
+  const state_snapshot = detailRenderState;
+  if (!state_snapshot) return;
+  const { history, quote, intradayData } = state_snapshot;
+  const source = detailChartMode === "intraday" ? intradayData : history.slice(-45);
+  if (!source.length) return;
+  const barWidth = rect.width / source.length;
+  detailCrosshairIndex = Math.min(Math.floor(x / barWidth), source.length - 1);
+  renderDetailChart();
+});
+
+detailCanvas.addEventListener("mouseleave", () => {
+  detailCrosshairIndex = -1;
+  renderDetailChart();
+});
+
+function renderDetailChart() {
+  const s = detailRenderState;
+  if (!s) return;
+  if (detailChartMode === "intraday" && s.intradayData.length) {
+    const prevClose = s.quote?.prevClose || s.history.at(-2)?.close || s.history.at(-1)?.open || 0;
+    drawIntradayLine(detailCanvas, s.intradayData, Number(prevClose), detailCrosshairIndex);
+  } else {
+    drawCandles(detailCanvas, s.history, detailCrosshairIndex);
+  }
+}
+
+async function fetchDetailIntraday() {
+  const s = detailRenderState;
+  if (!s?.stock) return;
+  const response = await chrome.runtime.sendMessage({
+    type: "get-intraday-trends",
+    code: s.stock.code,
+    market: s.stock.market,
+    ndays: 1
+  }).catch(() => null);
+  if (response?.ok && Array.isArray(response.data)) {
+    s.intradayData = response.data;
+  }
 }
 
 let bootstrappedRefresh = false;
@@ -211,7 +279,7 @@ function renderWatchItem(stock, state, latestReport) {
   const reportItem = latestReport?.ranking?.find((item) => item.code === stock.code) || null;
   const totalPossibleScore = latestReport?.totalPossibleScore ?? 0;
   const scoreValue = reportItem?.totalScore ?? "--";
-  const scoreClass = Number(scoreValue) >= Math.max(totalPossibleScore * 0.6, 1) ? "up" : "down";
+  const scoreClass = getScoreClass(scoreValue, totalPossibleScore);
   const activeClass = selectedCode === stock.code ? "active" : "";
   const hasQuote = Boolean(quote && quote.price > 0);
   const price = hasQuote ? Number(quote.price).toFixed(2) : "—";
@@ -219,27 +287,32 @@ function renderWatchItem(stock, state, latestReport) {
 
   return `
     <article class="stock-card ${activeClass}" data-code="${escapeHtml(stock.code)}" data-symbol="${escapeHtml(symbol)}">
+      <button class="delete-btn" type="button" data-delete="${escapeHtml(stock.market)}:${escapeHtml(stock.code)}" title="删除自选股">×</button>
       <div class="stock-head">
         <div>
-          <div class="stock-name">${escapeHtml(stock.name)}</div>
+          <div class="stock-name">${escapeHtml(stock.name)}<span class="stock-market-tag">${stock.market === "hk" ? "港" : stock.market === "bj" ? "北" : "A"}</span></div>
           <div class="stock-code">${escapeHtml(stock.market.toUpperCase())} ${escapeHtml(stock.code)}</div>
         </div>
-        <div class="stock-head-right">
-          <div class="stock-score ${scoreClass}">
-            <span class="num">${escapeHtml(scoreValue)}</span>分
-          </div>
-          <button class="delete-btn" type="button" data-delete="${escapeHtml(stock.market)}:${escapeHtml(stock.code)}" title="删除自选股">×</button>
+        <div class="stock-score ${scoreClass}">
+          <span class="num">${escapeHtml(String(scoreValue))}</span>分
         </div>
       </div>
       <div class="stock-mid">
         <div class="stock-price">${price}</div>
-        ${renderBadge(changePct)}
-      </div>
-      <div class="stock-tail">
-        <span class="stock-foot">${stock.market === "hk" ? "港股" : stock.market === "bj" ? "北交所" : "A股"}</span>
+        <div class="stock-mid-right">
+          ${renderBadge(changePct)}
+        </div>
       </div>
     </article>
   `;
+}
+
+function getScoreClass(score, totalPossible) {
+  if (score === "--" || !totalPossible) return "up";
+  const ratio = Number(score) / totalPossible;
+  if (ratio >= 0.6) return "score-high";
+  if (ratio >= 0.3) return "score-mid";
+  return "score-low";
 }
 
 function renderSelectedDetail(state, latestReport) {
@@ -252,6 +325,7 @@ function renderSelectedDetail(state, latestReport) {
     metricGrid.innerHTML = "";
     matchedRules.innerHTML = emptyRuleItem("暂无加分项");
     missedRules.innerHTML = emptyRuleItem("暂无减分项");
+    detailRenderState = null;
     drawCandles(detailCanvas, []);
     return;
   }
@@ -279,7 +353,7 @@ function renderSelectedDetail(state, latestReport) {
   }
 
   selectedScore.textContent = `${reportItem?.totalScore ?? "--"} 分`;
-  selectedScore.className = `score-pill ${(reportItem?.totalScore ?? 0) >= Math.max(totalPossibleScore * 0.6, 1) ? "up" : "down"}`;
+  selectedScore.className = `score-pill ${getScoreClass(reportItem?.totalScore ?? "--", totalPossibleScore)}`;
 
   metricGrid.innerHTML = `
     ${metricCard("现价", currentPrice.toFixed(2))}
@@ -297,7 +371,16 @@ function renderSelectedDetail(state, latestReport) {
     ? reportItem.missed.map((item) => ruleCard(item.ruleName, item.detail, false, item.points)).join("")
     : emptyRuleItem("暂无未命中项");
 
-  drawCandles(detailCanvas, history);
+  const prevIntradayData = detailRenderState?.intradayData || [];
+  const sameStock = detailRenderState?.stock?.code === selectedStock.code;
+  detailRenderState = {
+    stock: selectedStock,
+    history,
+    quote,
+    intradayData: sameStock ? prevIntradayData : []
+  };
+  detailCrosshairIndex = -1;
+  renderDetailChart();
 }
 
 function metricCard(label, value, color = "var(--text-main)") {

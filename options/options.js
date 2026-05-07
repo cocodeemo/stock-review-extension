@@ -78,6 +78,7 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
   const formData = new FormData(settingsForm);
   const state = await getState();
   const settings = {
+    klineDays: Math.max(30, Math.min(500, Number(formData.get("klineDays") || 60))),
     reviewReminderTime: String(formData.get("reviewReminderTime") || "15:30"),
     refreshIntervalMinutes: Number(formData.get("refreshIntervalMinutes") || 5),
     opacity: Number(formData.get("opacity") || 0.94),
@@ -112,6 +113,7 @@ async function render() {
   applyTheme(state.settings);
 
   settingsForm.reviewReminderTime.value = state.settings.reviewReminderTime;
+  settingsForm.klineDays.value = state.settings.klineDays ?? 60;
   settingsForm.refreshIntervalMinutes.value = state.settings.refreshIntervalMinutes;
   settingsForm.opacity.value = state.settings.opacity;
   settingsForm.theme.value = state.settings.theme;
@@ -216,6 +218,33 @@ async function handleAddScoreRule(formData) {
   await render();
 }
 
+function buildParamSummary(rule) {
+  const p = rule.params || {};
+  const t = rule.type || "";
+  const parts = [];
+  const periodTypes = ["ma_above", "ma_below", "bbi_above", "bbi_below", "macd_golden_cross", "macd_death_cross", "kdj_golden_cross", "kdj_death_cross", "volume_surge", "close_above_open", "price_near_ma"];
+  const thresholdTypes = ["ma_above", "ma_below", "price_near_ma"];
+  const volumeTypes = ["volume_surge"];
+  const dropTypes = ["consecutive_drop", "consecutive_rise"];
+
+  if (periodTypes.includes(t) && p.period != null) parts.push(`周期 ${p.period}`);
+  if (thresholdTypes.includes(t) && p.threshold != null) parts.push(`阈值 ${p.threshold}`);
+  if (volumeTypes.includes(t)) {
+    if (p.lookback != null) parts.push(`回看 ${p.lookback}`);
+    if (p.volumeRatioThreshold != null) parts.push(`放量 ${p.volumeRatioThreshold}x`);
+  }
+  if (dropTypes.includes(t)) {
+    if (p.lookback != null) parts.push(`回看 ${p.lookback}`);
+    if (p.dropThreshold != null) parts.push(`跌幅 ${p.dropThreshold}`);
+  }
+  if (parts.length === 0) {
+    if (p.period != null) parts.push(`周期 ${p.period}`);
+    if (p.threshold != null) parts.push(`阈值 ${p.threshold}`);
+    if (p.lookback != null) parts.push(`回看 ${p.lookback}`);
+  }
+  return parts.length ? parts.join(" / ") : "—";
+}
+
 function renderRuleList(container, rules, withPoints) {
   container.innerHTML = rules
     .map(
@@ -233,7 +262,7 @@ function renderRuleList(container, rules, withPoints) {
               <button class="tiny-btn delete-btn" data-id="${esc(rule.id)}">删除</button>
             </div>
           </div>
-          <div class="muted">周期 ${rule.params?.period || "-"} / 阈值 ${rule.params?.threshold ?? "-"} / 回看 ${rule.params?.lookback ?? "-"} / 阴线跌幅 ${rule.params?.dropThreshold ?? "-"} / 放量倍数 ${rule.params?.volumeRatioThreshold ?? "-"}</div>
+          <div class="muted">${buildParamSummary(rule)}</div>
         </div>
       `
     )

@@ -1,5 +1,13 @@
 import { compareByScoreDesc, formatDateTime, round } from "./utils.js";
 
+function esc(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export function buildDailyReport(scoreResults, snapshots, scoreRules) {
   const sorted = [...scoreResults].sort(compareByScoreDesc);
   const totalPossibleScore = scoreRules
@@ -76,12 +84,12 @@ export function buildReportHtml(report) {
     .map(
       (item) => `
         <section style="border:1px solid #e5d6d1;border-radius:14px;padding:16px;margin:0 0 12px;background:#fff;">
-          <h3 style="margin:0 0 10px;">${item.rank}. ${item.name} (${item.code})</h3>
-          <p style="margin:4px 0;">得分：<strong>${item.totalScore}/${report.totalPossibleScore}</strong></p>
-          <p style="margin:4px 0;">现价：${item.currentPrice} | 涨跌幅：${item.currentChangePct}%</p>
-          <p style="margin:4px 0;">MA5：${item.ma5 ?? "--"} | BBI：${item.bbi ?? "--"}</p>
-          <p style="margin:4px 0;">加分项：${item.matched.map((rule) => `${rule.ruleName}(+${rule.points})`).join("、") || "无"}</p>
-          <p style="margin:4px 0;">未命中项：${item.missed.map((rule) => rule.ruleName).join("、") || "无"}</p>
+          <h3 style="margin:0 0 10px;">${esc(item.rank)}. ${esc(item.name)} (${esc(item.code)})</h3>
+          <p style="margin:4px 0;">得分：<strong>${esc(item.totalScore)}/${esc(report.totalPossibleScore)}</strong></p>
+          <p style="margin:4px 0;">现价：${esc(item.currentPrice)} | 涨跌幅：${esc(item.currentChangePct)}%</p>
+          <p style="margin:4px 0;">MA5：${esc(item.ma5 ?? "--")} | BBI：${esc(item.bbi ?? "--")}</p>
+          <p style="margin:4px 0;">加分项：${item.matched.map((rule) => `${esc(rule.ruleName)}(+${esc(rule.points)})`).join("、") || "无"}</p>
+          <p style="margin:4px 0;">未命中项：${item.missed.map((rule) => esc(rule.ruleName)).join("、") || "无"}</p>
         </section>
       `
     )
@@ -96,8 +104,8 @@ export function buildReportHtml(report) {
       </head>
       <body style="font-family:'Segoe UI','PingFang SC',sans-serif;background:#f8f4f2;color:#1b1d23;padding:24px;">
         <h1 style="margin-top:0;">每日复盘报告</h1>
-        <p>生成时间：${report.generatedAtText}</p>
-        <p>自选股数量：${report.ranking.length} | 满分：${report.totalPossibleScore} 分 | 最高分：${report.overview.topScore} 分 | 平均分：${report.overview.avgScore} 分</p>
+        <p>生成时间：${esc(report.generatedAtText)}</p>
+        <p>自选股数量：${esc(report.ranking.length)} | 满分：${esc(report.totalPossibleScore)} 分 | 最高分：${esc(report.overview.topScore)} 分 | 平均分：${esc(report.overview.avgScore)} 分</p>
         ${rows}
       </body>
     </html>

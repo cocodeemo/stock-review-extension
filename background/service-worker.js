@@ -288,7 +288,10 @@ function dedupeTriggeredHits(hits, lastAlertState) {
   return hits.filter((hit) => {
     const key = `${hit.symbol}:${hit.ruleId}`;
     const previous = lastAlertState[key];
-    return !previous || !String(previous).startsWith(today);
+    if (!previous) return true;
+    // 将已存储的 ISO 字符串转换为本地日期再比较，避免 UTC 与本地时区偏差导致的重复推送
+    const previousDate = formatDate(new Date(previous));
+    return previousDate !== today;
   });
 }
 
@@ -330,7 +333,7 @@ async function runDailyReviewFromCache() {
   }
 
   const snapshots = state.watchlist.map((stock) =>
-    deriveStockSnapshot(stock, state.marketCache.quotes, state.marketCache.histories)
+    deriveStockSnapshot(stock, state.marketCache?.quotes ?? {}, state.marketCache?.histories ?? {})
   );
 
   const scoreResults = evaluateScores(state.scoreRules, snapshots);

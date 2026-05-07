@@ -20,16 +20,21 @@
         <form id="watchForm" class="stack-form">
           <input name="code" placeholder="股票代码 / ETF代码" maxlength="6" required>
           <input name="name" placeholder="名称">
-          <div class="inline-grid">
-            <input name="costPrice" type="number" step="0.01" placeholder="成本价">
-            <input name="positionQty" type="number" step="1" placeholder="持仓数量">
+          <div id="watchFormExtra" class="watch-form-extra hidden">
+            <div class="inline-grid">
+              <input name="costPrice" type="number" step="0.01" placeholder="成本价">
+              <input name="positionQty" type="number" step="1" placeholder="持仓数量">
+            </div>
+            <div class="inline-grid">
+              <input name="takeProfitPrice" type="number" step="0.01" placeholder="止盈价">
+              <input name="stopLossPrice" type="number" step="0.01" placeholder="止损价">
+            </div>
+            <textarea name="note" rows="2" placeholder="备注"></textarea>
           </div>
-          <div class="inline-grid">
-            <input name="takeProfitPrice" type="number" step="0.01" placeholder="止盈价">
-            <input name="stopLossPrice" type="number" step="0.01" placeholder="止损价">
+          <div class="watch-form-actions">
+            <button type="button" id="toggleExtraBtn" class="ghost-btn toggle-extra-btn">+ 详细信息</button>
+            <button type="submit" class="solid-btn">添加/覆盖</button>
           </div>
-          <textarea name="note" rows="2" placeholder="备注"></textarea>
-          <button type="submit" class="solid-btn">添加/覆盖自选股</button>
         </form>
 
         <div id="watchTable" class="watch-table"></div>
@@ -73,7 +78,7 @@
             <button id="showIntradayBtn" class="ghost-btn active-tab">分时</button>
             <button id="showDailyBtn" class="ghost-btn">日K</button>
           </div>
-          <canvas id="klineCanvas" width="900" height="360"></canvas>
+          <canvas id="klineCanvas" width="900" height="420"></canvas>
         </section>
 
         <section class="grid-panels">

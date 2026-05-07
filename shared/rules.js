@@ -198,8 +198,8 @@ export function evaluateRule(rule, snapshot) {
     case "close_above_open": {
       const prevClose = snapshot.prevCandle?.close || 0;
       return {
-        matched: currentChangePct > 0,
-        detail: `现价 ${currentPrice} / 昨收 ${prevClose}`
+        matched: prevClose > 0 && snapshot.currentPrice > prevClose,
+        detail: `今收 ${snapshot.currentPrice} > 昨收 ${prevClose}`
       };
     }
     case "volume_up_vs_prev":

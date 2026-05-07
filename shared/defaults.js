@@ -131,7 +131,7 @@ export const DEFAULT_ALERT_RULES = [
 export const DEFAULT_SCORE_RULES = [
   {
     id: "score-green-day",
-    name: "收盘上涨",
+    name: "今日上涨（今收>昨收）",
     type: "close_above_open",
     enabled: true,
     points: 1,
@@ -189,7 +189,7 @@ export const RULE_TYPES = [
   { value: "take_profit_hit", label: "触及止盈线" },
   { value: "stop_loss_hit", label: "触及止损线" },
   { value: "position_take_profit_or_stop_loss", label: "触及止盈或止损" },
-  { value: "close_above_open", label: "收盘价高于昨日收盘" },
+  { value: "close_above_open", label: "今日收盘涨（今收 > 昨收）" },
   { value: "volume_up_vs_prev", label: "成交量高于前一日" },
   { value: "macd_golden_cross", label: "MACD 金叉" },
   { value: "macd_death_cross", label: "MACD 死叉" },

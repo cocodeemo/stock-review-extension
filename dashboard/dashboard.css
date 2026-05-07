@@ -86,6 +86,7 @@ body {
 .active-tab {
   background: var(--accent-up);
   color: white;
+  box-shadow: 0 4px 10px rgba(201, 48, 44, 0.22);
 }
 
 .stack-form,
@@ -146,7 +147,7 @@ button {
 }
 
 .summary-strip {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 16px 0;
 }
 
@@ -163,8 +164,8 @@ button {
 }
 
 .metric-card .value {
-  margin-top: 8px;
-  font-size: 20px;
+  margin-top: 6px;
+  font-size: 22px;
   font-weight: 700;
 }
 
@@ -191,6 +192,17 @@ button {
 
 .watch-row button {
   padding: 8px 10px;
+}
+
+.watch-row .delete-btn {
+  background: rgba(201, 48, 44, 0.06);
+  border: 1px solid rgba(201, 48, 44, 0.18);
+  color: var(--accent-up);
+  margin-left: 8px;
+}
+
+.watch-row .delete-btn:hover {
+  background: rgba(201, 48, 44, 0.14);
 }
 
 .tag {
@@ -248,3 +260,28 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.watch-form-extra {
+  display: grid;
+  gap: 10px;
+}
+
+.watch-form-extra.hidden {
+  display: none;
+}
+
+.watch-form-actions {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+}
+
+.toggle-extra-btn {
+  white-space: nowrap;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.tag.score-high { background: var(--accent-up); }
+.tag.score-mid  { background: #e07b2a; }
+.tag.score-low  { background: var(--accent-down); }

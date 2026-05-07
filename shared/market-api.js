@@ -157,6 +157,9 @@ export async function fetchEastMoneyHistory(code, market, limit = 120) {
     `&lmt=${limit}&end=20500101`;
 
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`EastMoney kline HTTP ${response.status} for ${secid}`);
+  }
   const payload = await response.json();
   const klines = payload?.data?.klines || [];
 
@@ -206,10 +209,13 @@ export async function fetchEastMoneyIntradayTrends(code, market, ndays = 1) {
     "&ut=fa5fd1943c7b386f172d6893dbfba10b";
 
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`EastMoney intraday HTTP ${response.status} for ${secid}`);
+  }
   const payload = await response.json();
   const trends = payload?.data?.trends || [];
 
-  return trends.map((row) => {
+  const parsed = trends.map((row) => {
     const [time, price, avgPrice, volume, amount] = row.split(",");
     return {
       time,
@@ -219,6 +225,12 @@ export async function fetchEastMoneyIntradayTrends(code, market, ndays = 1) {
       amount: toNumber(amount)
     };
   });
+
+  // volume 是累计值，转成每分钟增量
+  return parsed.map((item, index) => ({
+    ...item,
+    volume: index === 0 ? item.volume : Math.max(item.volume - parsed[index - 1].volume, 0)
+  }));
 }
 
 export async function fetchMarketBundle(watchlist, historyDays = 120) {
@@ -299,18 +311,27 @@ export async function refreshMarketBundleWithCache({
     return forceHistories || isExpired(historyUpdatedAtBySymbol[symbol], historyTtlMs, now) || !histories[symbol]?.length;
   });
 
-  for (const item of staleHistoryItems) {
-    const symbol = buildFullSymbol(item.code, item.market);
-    try {
-      const freshHistory = await fetchEastMoneyHistory(item.code, item.market || inferMarket(item.code), historyDays);
-      histories[symbol] = freshHistory;
-      historyUpdatedAtBySymbol[symbol] = new Date().toISOString();
-      await sleep(CACHE_POLICY.requestGapMs);
-    } catch (error) {
-      if (!histories[symbol]?.length) {
-        throw error;
-      }
-      console.warn(`History refresh failed for ${symbol}, fallback to cached history`, error);
+  // 分批并行拉取历史数据，每批 5 只，批间等待一个请求间隔
+  const BATCH_SIZE = 5;
+  for (let batchStart = 0; batchStart < staleHistoryItems.length; batchStart += BATCH_SIZE) {
+    const batch = staleHistoryItems.slice(batchStart, batchStart + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (item) => {
+        const symbol = buildFullSymbol(item.code, item.market);
+        try {
+          const freshHistory = await fetchEastMoneyHistory(item.code, item.market || inferMarket(item.code), historyDays);
+          histories[symbol] = freshHistory;
+          historyUpdatedAtBySymbol[symbol] = new Date().toISOString();
+        } catch (error) {
+          if (!histories[symbol]?.length) {
+            throw error;
+          }
+          console.warn(`History refresh failed for ${symbol}, fallback to cached history`, error);
+        }
+      })
+    );
+    if (batchStart + BATCH_SIZE < staleHistoryItems.length) {
+      await sleep(CACHE_POLICY.requestGapMs * BATCH_SIZE);
     }
   }
 
@@ -354,23 +375,51 @@ export async function refreshMarketBundleWithCache({
     }
   }
 
-  // 如果还有 symbol 没有 quote（history 缓存为空），单独拉 1 条 kline
+  // 如果还有 symbol 没有 quote（history 缓存仍为空），单独拉 1 条 kline 作兜底
+  // 直接调 fetchEastMoneyHistory 而非 fetchEastMoneyQuotes，避免对同一只股票发两次请求
   const missingQuoteItems = watchlist.filter((item) => {
     const symbol = buildFullSymbol(item.code, item.market);
     return !quotes[symbol] || !quotes[symbol].price;
   });
 
   if (missingQuoteItems.length > 0) {
-    try {
-      const freshQuotes = await fetchEastMoneyQuotes(missingQuoteItems);
-      const fetchedAt = new Date().toISOString();
-      Object.entries(freshQuotes).forEach(([symbol, quote]) => {
-        quotes[symbol] = quote;
-        quoteUpdatedAtBySymbol[symbol] = fetchedAt;
-      });
-    } catch (error) {
-      console.warn("Quote refresh failed for missing items", error);
-    }
+    await Promise.all(
+      missingQuoteItems.map(async (item) => {
+        const symbol = buildFullSymbol(item.code, item.market);
+        const market = item.market || inferMarket(item.code);
+        try {
+          const klineData = await fetchEastMoneyHistory(item.code, market, 1);
+          const latest = klineData && klineData.length > 0 ? klineData[klineData.length - 1] : null;
+          if (latest && latest.close > 0) {
+            const price = latest.close;
+            const prevClose = price - (latest.change || 0);
+            quotes[symbol] = {
+              symbol,
+              code: market === "hk"
+                ? String(item.code).padStart(5, "0")
+                : String(item.code).padStart(6, "0"),
+              market,
+              name: item.name || item.code,
+              open: latest.open || 0,
+              prevClose,
+              price,
+              high: latest.high || 0,
+              low: latest.low || 0,
+              volume: latest.volume || 0,
+              turnover: 0,
+              change: latest.change || 0,
+              changePct: latest.changePct || 0,
+              date: formatDate(),
+              time: new Date().toTimeString().slice(0, 8),
+              fetchedAt: new Date().toISOString()
+            };
+            quoteUpdatedAtBySymbol[symbol] = new Date().toISOString();
+          }
+        } catch (error) {
+          console.warn(`Fallback quote fetch failed for ${symbol}`, error);
+        }
+      })
+    );
   }
 
   return {

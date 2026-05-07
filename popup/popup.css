@@ -188,6 +188,7 @@ h3 {
 .stock-card {
   padding: 8px 10px;
   cursor: pointer;
+  position: relative;
   transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -212,6 +213,20 @@ h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stock-market-tag {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .stock-code {
@@ -226,13 +241,10 @@ h3 {
   line-height: 1;
 }
 
-.stock-tail {
-  justify-content: flex-end;
-}
-
-.stock-foot {
-  font-size: 10px;
-  color: var(--text-muted);
+.stock-mid-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .stock-head-right {
@@ -264,20 +276,31 @@ h3 {
 }
 
 .delete-btn {
-  width: 18px;
-  height: 18px;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(108, 117, 132, 0.14);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+
+.stock-card:hover .delete-btn {
+  opacity: 1;
 }
 
 .delete-btn:hover {
   color: var(--accent-up);
-  border-color: rgba(201, 48, 44, 0.2);
+  border-color: rgba(201, 48, 44, 0.3);
+  background: #fff;
 }
 
 /* ── badges / score pill ── */
@@ -297,6 +320,14 @@ h3 {
 .score-pill.up { background: var(--accent-up); }
 .badge.down,
 .score-pill.down { background: var(--accent-down); }
+
+.stock-score.score-high .num { color: var(--accent-up); }
+.stock-score.score-mid  .num { color: #e07b2a; }
+.stock-score.score-low  .num { color: var(--accent-down); }
+
+.score-pill.score-high { background: var(--accent-up); }
+.score-pill.score-mid  { background: #e07b2a; }
+.score-pill.score-low  { background: var(--accent-down); }
 
 .score-pill {
   min-width: 64px;
@@ -350,9 +381,37 @@ h3 {
   background: rgba(255, 255, 255, 0.9);
 }
 
+.chart-tabs-mini {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.chart-tab-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.chart-tab-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.active-tab-mini {
+  color: var(--accent-up);
+  border-bottom: 2px solid var(--accent-up);
+  margin-bottom: -1px;
+}
+
 #detailCanvas {
   width: 100%;
-  height: 160px;
+  height: 200px;
   display: block;
 }
 
@@ -364,23 +423,23 @@ h3 {
   flex-shrink: 0;
 }
 
-.close-detail-btn {
+.back-btn {
+  padding: 0;
   width: 24px;
   height: 24px;
-  padding: 0;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--border-color);
-  color: var(--text-soft);
-  font-size: 14px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
   cursor: pointer;
+  border-radius: 6px;
 }
 
-.close-detail-btn:hover {
-  background: rgba(201, 48, 44, 0.08);
-  border-color: rgba(201, 48, 44, 0.25);
+.back-btn:hover {
   color: var(--accent-up);
+  background: rgba(201, 48, 44, 0.07);
 }
 
 /* ── rule lists: 2-col ── */

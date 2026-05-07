@@ -33,6 +33,14 @@ function esc(str) {
     .replace(/"/g, "&quot;");
 }
 
+function scoreTagClass(score, totalPossible) {
+  if (!totalPossible) return "up";
+  const ratio = Number(score || 0) / totalPossible;
+  if (ratio >= 0.6) return "score-high";
+  if (ratio >= 0.3) return "score-mid";
+  return "score-low";
+}
+
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   await chrome.runtime.sendMessage({ type: "force-refresh" });
   await refreshIntradayForSelection(true);
@@ -70,6 +78,14 @@ document.getElementById("exportHtmlBtn").addEventListener("click", async () => {
 
 document.getElementById("optionsBtn").addEventListener("click", async () => {
   await chrome.runtime.openOptionsPage();
+});
+
+document.getElementById("toggleExtraBtn").addEventListener("click", () => {
+  const extra = document.getElementById("watchFormExtra");
+  const btn = document.getElementById("toggleExtraBtn");
+  const isHidden = extra.classList.contains("hidden");
+  extra.classList.toggle("hidden", !isHidden);
+  btn.textContent = isHidden ? "- 收起" : "+ 详细信息";
 });
 
 showIntradayBtn.addEventListener("click", async () => {
@@ -141,8 +157,13 @@ watchForm.addEventListener("submit", async (event) => {
 });
 
 chrome.storage.onChanged.addListener(() => {
-  render();
+  debouncedRender();
 });
+
+function debouncedRender() {
+  clearTimeout(debouncedRender._timer);
+  debouncedRender._timer = setTimeout(() => render(), 120);
+}
 
 const importModal = document.getElementById("importModal");
 const importTextarea = document.getElementById("importTextarea");
@@ -306,7 +327,7 @@ async function render() {
                 <div class="muted">${esc(item.code)} | 现价 ${formatCurrency(item.currentPrice)}</div>
               </div>
               <div>
-                <div class="tag up">${esc(item.totalScore)}分</div>
+                <div class="tag ${scoreTagClass(item.totalScore, latestReport?.totalPossibleScore)}">${esc(item.totalScore)}分</div>
                 <div class="muted">${item.matched.map((rule) => esc(rule.ruleName)).join("、") || "暂无"}</div>
               </div>
             </div>
