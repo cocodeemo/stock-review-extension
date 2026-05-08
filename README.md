@@ -85,6 +85,18 @@
 
 ## 版本记录
 
+### v1.0.6
+- 安全加固：统一所有页面的 HTML 转义函数，消除潜在 XSS 风险（dashboard、options、report 均改用 `utils.js` 的 `escapeHtml()`）
+- 安全加固：`manifest.json` 新增显式 `content_security_policy`，限定 `script-src 'self'`
+- 修复：实时刷新 `setInterval` 添加并发保护，防止请求堆积
+- 修复：`dedupeTriggeredHits()` 日期比较改用 ISO 字符串直接切片，消除时区歧义导致的重复预警推送
+- 修复：`intradayBySymbol` 缓存限制最多保留 10 只股票的分时数据，防止长期运行内存无限增长
+- 修复：规则参数（period / lookback / threshold 等）添加合理范围校验，防止异常输入
+- 修复：`refreshIntervalMinutes` 设置项添加范围校验（1–1440 分钟）
+- 修复：`fetchEastMoneyHistory()` 的 `limit` 参数 clamp 到 `[1, 500]`，防止构造异常 URL
+- 修复：`storage.js` 的 `ensureDefaults()` 添加 try-catch，存储异常时优雅降级
+- 改进：静默 `.catch(() => {})` 全部替换为 `console.warn` 输出，便于问题排查
+
 ### v1.0.5
 - K 线图支持分时/日K切换，popup 详情面板新增分时折线图
 - 日K悬浮十字光标，显示日期、收盘价、涨跌幅、成交额

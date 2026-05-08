@@ -29,15 +29,19 @@ const DEFAULT_STATE = {
 };
 
 export async function ensureDefaults() {
-  const current = await chrome.storage.local.get(null);
-  const patches = {};
-  for (const [key, value] of Object.entries(DEFAULT_STATE)) {
-    if (current[key] === undefined) {
-      patches[key] = clone(value);
+  try {
+    const current = await chrome.storage.local.get(null);
+    const patches = {};
+    for (const [key, value] of Object.entries(DEFAULT_STATE)) {
+      if (current[key] === undefined) {
+        patches[key] = clone(value);
+      }
     }
-  }
-  if (Object.keys(patches).length > 0) {
-    await chrome.storage.local.set(patches);
+    if (Object.keys(patches).length > 0) {
+      await chrome.storage.local.set(patches);
+    }
+  } catch (error) {
+    console.error("[storage] ensureDefaults failed:", error);
   }
   return getState();
 }
@@ -48,7 +52,7 @@ export async function getState() {
     settings: { ...clone(DEFAULT_SETTINGS), ...result[STORAGE_KEYS.SETTINGS] },
     watchlist: normalizeWatchlist(result[STORAGE_KEYS.WATCHLIST] || DEFAULT_WATCHLIST),
     alertRules: clone(result[STORAGE_KEYS.ALERT_RULES] || DEFAULT_ALERT_RULES),
-    scoreRules: normalizeScoreRules(result[STORAGE_KEYS.SCORE_RULES] || DEFAULT_SCORE_RULES),
+    scoreRules: clone(result[STORAGE_KEYS.SCORE_RULES] || DEFAULT_SCORE_RULES),
     marketCache: clone(result[STORAGE_KEYS.CACHE] || DEFAULT_STATE[STORAGE_KEYS.CACHE]),
     reports: clone(result[STORAGE_KEYS.REPORTS] || DEFAULT_STATE[STORAGE_KEYS.REPORTS]),
     alertLogs: clone(result[STORAGE_KEYS.ALERT_LOGS] || []),
@@ -106,19 +110,4 @@ function normalizeWatchlist(items) {
     stopLossPrice: Number(item.stopLossPrice || 0),
     note: item.note || ""
   }));
-}
-
-function normalizeScoreRules(items) {
-  const rules = clone(items || []);
-  const oldDefaultIds = ["score-ma5", "score-bbi", "score-green-day", "score-volume-up", "score-macd"];
-  const currentIds = rules.map((item) => item.id);
-  const looksLikeOldDefaultSet =
-    rules.length === oldDefaultIds.length &&
-    oldDefaultIds.every((id) => currentIds.includes(id));
-
-  if (looksLikeOldDefaultSet) {
-    return clone(DEFAULT_SCORE_RULES);
-  }
-
-  return rules;
 }

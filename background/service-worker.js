@@ -9,7 +9,6 @@ import {
   deriveStockSnapshot,
   fetchEastMoneyHistory,
   fetchEastMoneyIntradayTrends,
-  fetchEastMoneyQuotes,
   refreshMarketBundleWithCache
 } from "../shared/market-api.js";
 import { buildDailyReport, buildReportNotificationMessage } from "../shared/report.js";
@@ -284,14 +283,12 @@ function buildAlertState(hits) {
 }
 
 function dedupeTriggeredHits(hits, lastAlertState) {
-  const today = formatDate(new Date());
+  const today = new Date().toISOString().slice(0, 10);
   return hits.filter((hit) => {
     const key = `${hit.symbol}:${hit.ruleId}`;
     const previous = lastAlertState[key];
     if (!previous) return true;
-    // 将已存储的 ISO 字符串转换为本地日期再比较，避免 UTC 与本地时区偏差导致的重复推送
-    const previousDate = formatDate(new Date(previous));
-    return previousDate !== today;
+    return previous.slice(0, 10) !== today;
   });
 }
 
@@ -321,9 +318,13 @@ async function detectTradingDay(state) {
 }
 
 function getNextDailyTime(date) {
-  return date.getTime() > Date.now()
+  let next = date.getTime() > Date.now()
     ? date
     : new Date(date.getTime() + 24 * 60 * 60 * 1000);
+  while (isWeekend(next)) {
+    next = new Date(next.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return next;
 }
 
 async function runDailyReviewFromCache() {

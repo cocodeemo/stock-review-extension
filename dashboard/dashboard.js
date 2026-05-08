@@ -3,7 +3,7 @@ import { drawCandles, drawIntradayLine } from "../shared/chart.js";
 import { buildReportHtml, buildReportMarkdown } from "../shared/report.js";
 import { ensureDefaults, getState, saveWatchlist } from "../shared/storage.js";
 import { applyTheme, formatCurrency } from "../shared/ui.js";
-import { formatDateTime, formatStockCode, inferMarket } from "../shared/utils.js";
+import { debounce, escapeHtml, formatDateTime, formatStockCode, inferMarket } from "../shared/utils.js";
 
 const watchForm = document.getElementById("watchForm");
 const watchTable = document.getElementById("watchTable");
@@ -22,16 +22,12 @@ let selectedCode = null;
 let bootstrappedRefresh = false;
 let realtimeTimer = null;
 let intradayTimer = null;
+let isRealtimeRefreshing = false;
+let isIntradayRefreshing = false;
 let intradayBySymbol = {};
 let chartMode = "intraday";
-
-function esc(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+let crosshairIndex = -1;
+let cachedState = null;
 
 function scoreTagClass(score, totalPossible) {
   if (!totalPossible) return "up";
@@ -92,16 +88,68 @@ showIntradayBtn.addEventListener("click", async () => {
   chartMode = "intraday";
   showIntradayBtn.classList.add("active-tab");
   showDailyBtn.classList.remove("active-tab");
-  await refreshIntradayForSelection();
-  await render();
+
+  const selectedStock = cachedState?.watchlist.find((item) => item.code === selectedCode) || cachedState?.watchlist[0];
+  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  const hasCached = symbol && intradayBySymbol[symbol]?.length > 0;
+
+  if (hasCached) {
+    renderChart(cachedState);
+  } else {
+    liveStatus.textContent = "正在加载分时数据...";
+  }
+
+  await refreshIntradayForSelection(true);
 });
 
 showDailyBtn.addEventListener("click", async () => {
   chartMode = "daily";
   showDailyBtn.classList.add("active-tab");
   showIntradayBtn.classList.remove("active-tab");
+  crosshairIndex = -1;
   await render();
 });
+
+klineCanvas.addEventListener("mousemove", (event) => {
+  if (!cachedState) return;
+  const rect = klineCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const selectedStock = cachedState.watchlist.find((item) => item.code === selectedCode) || cachedState.watchlist[0];
+  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  if (!symbol) return;
+  const source = chartMode === "intraday"
+    ? (intradayBySymbol[symbol] || [])
+    : (cachedState.marketCache?.histories?.[symbol] || []).slice(-45);
+  if (!source.length) return;
+  const barWidth = chartMode === "intraday"
+    ? rect.width / Math.max(source.length - 1, 1)
+    : rect.width / source.length;
+  crosshairIndex = Math.min(Math.floor(x / barWidth), source.length - 1);
+  renderChart(cachedState);
+});
+
+klineCanvas.addEventListener("mouseleave", () => {
+  crosshairIndex = -1;
+  if (cachedState) renderChart(cachedState);
+});
+
+function renderChart(state) {
+  const selectedStock = state.watchlist.find((item) => item.code === selectedCode) || state.watchlist[0];
+  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  const quote = symbol ? state.marketCache?.quotes?.[symbol] : null;
+  const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
+  const intraday = symbol ? intradayBySymbol[symbol] || [] : [];
+
+  if (chartMode === "intraday" && intraday.length) {
+    drawIntradayLine(klineCanvas, intraday, Number(quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0), crosshairIndex);
+    showIntradayBtn.classList.add("active-tab");
+    showDailyBtn.classList.remove("active-tab");
+  } else {
+    drawCandles(klineCanvas, history, crosshairIndex);
+    showDailyBtn.classList.add("active-tab");
+    showIntradayBtn.classList.remove("active-tab");
+  }
+}
 
 watchTable.addEventListener("click", async (event) => {
   const selectBtn = event.target.closest(".select-btn");
@@ -160,10 +208,7 @@ chrome.storage.onChanged.addListener(() => {
   debouncedRender();
 });
 
-function debouncedRender() {
-  clearTimeout(debouncedRender._timer);
-  debouncedRender._timer = setTimeout(() => render(), 120);
-}
+const debouncedRender = debounce(render, 120);
 
 const importModal = document.getElementById("importModal");
 const importTextarea = document.getElementById("importTextarea");
@@ -249,13 +294,14 @@ async function render() {
   // 每次重绘都按当前选中股票更新行情摘要和图表。
   await ensureDefaults();
   const state = await getState();
+  cachedState = state;
   applyTheme(state.settings);
 
   if (!bootstrappedRefresh) {
     bootstrappedRefresh = true;
-    chrome.runtime.sendMessage({ type: "soft-refresh" }).catch(() => {});
+    chrome.runtime.sendMessage({ type: "soft-refresh" }).catch((err) => console.warn("[dashboard] soft-refresh failed:", err));
     restartRealtimeLoop();
-    refreshIntradayForSelection(true).catch(() => {});
+    refreshIntradayForSelection(true).catch((err) => console.warn("[dashboard] initial intraday fetch failed:", err));
   }
 
   if (!selectedCode && state.watchlist[0]) {
@@ -268,14 +314,14 @@ async function render() {
       const quote = state.marketCache?.quotes?.[symbol];
       const hasQuote = Boolean(quote && quote.price > 0);
       return `
-        <div class="watch-row" data-symbol="${esc(symbol)}">
+        <div class="watch-row" data-symbol="${escapeHtml(symbol)}">
           <div>
-            <strong>${esc(stock.name)}</strong>
-            <div class="muted">${esc(stock.code)} | 现价 ${hasQuote ? formatCurrency(quote.price) : "—（无数据）"}</div>
+            <strong>${escapeHtml(stock.name)}</strong>
+            <div class="muted">${escapeHtml(stock.code)} | 现价 ${hasQuote ? formatCurrency(quote.price) : "—（无数据）"}</div>
           </div>
           <div>
-            <button data-code="${esc(stock.code)}" data-market="${esc(stock.market)}" class="ghost-btn select-btn">查看</button>
-            <button data-code="${esc(stock.code)}" data-market="${esc(stock.market)}" class="ghost-btn delete-btn">删除</button>
+            <button data-code="${escapeHtml(stock.code)}" data-market="${escapeHtml(stock.market)}" class="ghost-btn select-btn">查看</button>
+            <button data-code="${escapeHtml(stock.code)}" data-market="${escapeHtml(stock.market)}" class="ghost-btn delete-btn">删除</button>
           </div>
         </div>
       `;
@@ -307,9 +353,9 @@ async function render() {
     : "";
 
   if (chartMode === "intraday" && intraday.length) {
-    drawIntradayLine(klineCanvas, intraday, Number(quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0));
+    drawIntradayLine(klineCanvas, intraday, Number(quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0), crosshairIndex);
   } else {
-    drawCandles(klineCanvas, history);
+    drawCandles(klineCanvas, history, crosshairIndex);
   }
 
   const latestReport = state.reports?.latest;
@@ -323,12 +369,12 @@ async function render() {
           (item) => `
             <div class="report-item">
               <div>
-                <strong>${esc(item.rank)}. ${esc(item.name)}</strong>
-                <div class="muted">${esc(item.code)} | 现价 ${formatCurrency(item.currentPrice)}</div>
+                <strong>${escapeHtml(item.rank)}. ${escapeHtml(item.name)}</strong>
+                <div class="muted">${escapeHtml(item.code)} | 现价 ${formatCurrency(item.currentPrice)}</div>
               </div>
               <div>
-                <div class="tag ${scoreTagClass(item.totalScore, latestReport?.totalPossibleScore)}">${esc(item.totalScore)}分</div>
-                <div class="muted">${item.matched.map((rule) => esc(rule.ruleName)).join("、") || "暂无"}</div>
+                <div class="tag ${scoreTagClass(item.totalScore, latestReport?.totalPossibleScore)}">${escapeHtml(item.totalScore)}分</div>
+                <div class="muted">${item.matched.map((rule) => escapeHtml(rule.ruleName)).join("、") || "暂无"}</div>
               </div>
             </div>
           `
@@ -343,8 +389,8 @@ async function render() {
           (item) => `
             <div class="alert-item">
               <div>
-                <strong>${esc(item.stockName)}</strong>
-                <div class="muted">${esc(item.ruleName)}</div>
+                <strong>${escapeHtml(item.stockName)}</strong>
+                <div class="muted">${escapeHtml(item.ruleName)}</div>
               </div>
               <div>
                 <div class="tag ${Number(item.currentChangePct) >= 0 ? "up" : "down"}">${formatCurrency(item.currentPrice)}</div>
@@ -376,11 +422,25 @@ function restartRealtimeLoop() {
   }
 
   realtimeTimer = window.setInterval(async () => {
-    await chrome.runtime.sendMessage({ type: "realtime-refresh" }).catch(() => {});
+    if (isRealtimeRefreshing) return;
+    isRealtimeRefreshing = true;
+    try {
+      await chrome.runtime.sendMessage({ type: "realtime-refresh" });
+    } catch (err) {
+      console.warn("[dashboard] realtime-refresh failed:", err);
+    } finally {
+      isRealtimeRefreshing = false;
+    }
   }, 5000);
 
   intradayTimer = window.setInterval(async () => {
-    await refreshIntradayForSelection();
+    if (isIntradayRefreshing) return;
+    isIntradayRefreshing = true;
+    try {
+      await refreshIntradayForSelection();
+    } finally {
+      isIntradayRefreshing = false;
+    }
   }, 15000);
 }
 
@@ -397,11 +457,21 @@ function stopRealtimeLoop() {
 
 async function refreshIntradayForSelection(force = false) {
   const state = await getState();
+  cachedState = state;
   const selectedStock = state.watchlist.find((item) => item.code === selectedCode) || state.watchlist[0];
   if (!selectedStock) {
     return;
   }
   const symbol = `${selectedStock.market}${selectedStock.code}`;
+
+  // 如果不是强制刷新且有缓存数据，直接使用缓存
+  if (!force && intradayBySymbol[symbol]?.length > 0) {
+    if (chartMode === "intraday") {
+      await render();
+    }
+    return;
+  }
+
   if (!force && chartMode !== "intraday") {
     return;
   }
@@ -415,8 +485,13 @@ async function refreshIntradayForSelection(force = false) {
 
   if (response?.ok && Array.isArray(response.data)) {
     intradayBySymbol[symbol] = response.data;
-    if (chartMode === "intraday") {
-      await render();
+    const keys = Object.keys(intradayBySymbol);
+    if (keys.length > 10) {
+      delete intradayBySymbol[keys[0]];
     }
+  }
+
+  if (chartMode === "intraday") {
+    await render();
   }
 }

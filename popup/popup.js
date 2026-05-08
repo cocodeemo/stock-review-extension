@@ -58,13 +58,13 @@ detailDailyBtn.addEventListener("click", () => {
 detailCanvas.addEventListener("mousemove", (event) => {
   const rect = detailCanvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
-  const data = detailChartMode === "intraday" ? detailIntradayData : null;
-  const state_snapshot = detailRenderState;
-  if (!state_snapshot) return;
-  const { history, quote, intradayData } = state_snapshot;
+  if (!detailRenderState) return;
+  const { history, intradayData } = detailRenderState;
   const source = detailChartMode === "intraday" ? intradayData : history.slice(-45);
   if (!source.length) return;
-  const barWidth = rect.width / source.length;
+  const barWidth = detailChartMode === "intraday"
+    ? rect.width / Math.max(source.length - 1, 1)
+    : rect.width / source.length;
   detailCrosshairIndex = Math.min(Math.floor(x / barWidth), source.length - 1);
   renderDetailChart();
 });
@@ -221,12 +221,12 @@ async function render() {
 
   if (!bootstrappedRefresh) {
     bootstrappedRefresh = true;
-    ensureDefaults().catch(() => {});
+    ensureDefaults().catch((err) => console.warn("[popup] ensureDefaults failed:", err));
     chrome.runtime
       .sendMessage({ type: "soft-refresh" })
       .then(() => chrome.runtime.sendMessage({ type: "run-review-cached" }))
       .then(() => render())
-      .catch(() => {});
+      .catch((err) => console.warn("[popup] background refresh failed:", err));
   }
 
   const latestReport = state.reports?.latest || null;
@@ -386,8 +386,8 @@ function renderSelectedDetail(state, latestReport) {
 function metricCard(label, value, color = "var(--text-main)") {
   return `
     <article class="metric-card">
-      <div class="label">${label}</div>
-      <div class="value" style="color:${color};">${value}</div>
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="value" style="color:${escapeHtml(color)};">${escapeHtml(String(value))}</div>
     </article>
   `;
 }

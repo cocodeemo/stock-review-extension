@@ -7,7 +7,7 @@ import {
   updateSettings
 } from "../shared/storage.js";
 import { applyTheme, createRuleParamFields } from "../shared/ui.js";
-import { uid } from "../shared/utils.js";
+import { escapeHtml, uid } from "../shared/utils.js";
 
 const settingsForm = document.getElementById("settingsForm");
 const holidayForm = document.getElementById("holidayForm");
@@ -16,14 +16,6 @@ const alertRulesList = document.getElementById("alertRulesList");
 const scoreRulesList = document.getElementById("scoreRulesList");
 let editingAlertRuleId = null;
 let editingScoreRuleId = null;
-
-function esc(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 holidayList.addEventListener("click", async (event) => {
   const btn = event.target.closest("[data-holiday]");
@@ -80,7 +72,7 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
   const settings = {
     klineDays: Math.max(30, Math.min(500, Number(formData.get("klineDays") || 60))),
     reviewReminderTime: String(formData.get("reviewReminderTime") || "15:30"),
-    refreshIntervalMinutes: Number(formData.get("refreshIntervalMinutes") || 5),
+    refreshIntervalMinutes: Math.max(1, Math.min(1440, Number(formData.get("refreshIntervalMinutes") || 5))),
     opacity: Number(formData.get("opacity") || 0.94),
     theme: String(formData.get("theme") || "scarlet"),
     reviewOnlyTradingDays: settingsForm.reviewOnlyTradingDays.checked,
@@ -125,8 +117,8 @@ async function render() {
     .map(
       (item) => `
         <div class="chip">
-          <span>${esc(item)}</span>
-          <button class="tiny-btn" data-holiday="${esc(item)}">删除</button>
+          <span>${escapeHtml(item)}</span>
+          <button class="tiny-btn" data-holiday="${escapeHtml(item)}">删除</button>
         </div>
       `
     )
@@ -155,14 +147,14 @@ function renderRuleComposer(formId, submitLabel, withPoints, onSubmit, editingRu
   form.innerHTML = `
     <div class="rule-card">
       <div class="mini-grid">
-        <input name="name" placeholder="规则名称" value="${esc(editingRule?.name || "")}" required>
-        <select name="type">${RULE_TYPES.map((item) => `<option value="${esc(item.value)}" ${editingRule?.type === item.value ? "selected" : ""}>${esc(item.label)}</option>`).join("")}</select>
-        ${withPoints ? `<input name="points" type="number" min="0" step="0.5" value="${esc(editingRule?.points ?? 1)}" placeholder="分值">` : ""}
+        <input name="name" placeholder="规则名称" value="${escapeHtml(editingRule?.name || "")}" required>
+        <select name="type">${RULE_TYPES.map((item) => `<option value="${escapeHtml(item.value)}" ${editingRule?.type === item.value ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}</select>
+        ${withPoints ? `<input name="points" type="number" min="0" step="0.5" value="${escapeHtml(editingRule?.points ?? 1)}" placeholder="分值">` : ""}
         ${createRuleParamFields(editingRule)}
       </div>
       <div class="rule-row" style="margin-top: 12px;">
         <label class="check-row" style="padding-top: 0;"><input name="enabled" type="checkbox" ${editingRule?.enabled === false ? "" : "checked"}>启用规则</label>
-        <button class="solid-btn" type="submit">${editingRule ? "保存修改" : esc(submitLabel)}</button>
+        <button class="solid-btn" type="submit">${editingRule ? "保存修改" : escapeHtml(submitLabel)}</button>
       </div>
     </div>
   `;
@@ -175,11 +167,11 @@ function renderRuleComposer(formId, submitLabel, withPoints, onSubmit, editingRu
 
 function buildRuleParams(formData) {
   return {
-    period: Number(formData.get("period") || 5),
-    threshold: Number(formData.get("threshold") || 0),
-    lookback: Number(formData.get("lookback") || 12),
-    dropThreshold: Number(formData.get("dropThreshold") || 3),
-    volumeRatioThreshold: Number(formData.get("volumeRatioThreshold") || 1.5)
+    period: Math.max(1, Math.min(200, Number(formData.get("period") || 5))),
+    threshold: Math.max(0, Math.min(100, Number(formData.get("threshold") || 0))),
+    lookback: Math.max(1, Math.min(250, Number(formData.get("lookback") || 12))),
+    dropThreshold: Math.max(0, Math.min(100, Number(formData.get("dropThreshold") || 3))),
+    volumeRatioThreshold: Math.max(0.1, Math.min(100, Number(formData.get("volumeRatioThreshold") || 1.5)))
   };
 }
 
@@ -252,14 +244,14 @@ function renderRuleList(container, rules, withPoints) {
         <div class="rule-card">
           <div class="section-head">
             <div>
-              <strong>${esc(rule.name)}</strong>
-              <div class="muted">${esc(RULE_TYPES.find((item) => item.value === rule.type)?.label || rule.type)}</div>
+              <strong>${escapeHtml(rule.name)}</strong>
+              <div class="muted">${escapeHtml(RULE_TYPES.find((item) => item.value === rule.type)?.label || rule.type)}</div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
               ${withPoints ? `<span>${Number(rule.points || 0)} 分</span>` : ""}
-              <button class="tiny-btn edit-btn" data-id="${esc(rule.id)}">编辑</button>
-              <button class="tiny-btn toggle-btn" data-id="${esc(rule.id)}">${rule.enabled ? "停用" : "启用"}</button>
-              <button class="tiny-btn delete-btn" data-id="${esc(rule.id)}">删除</button>
+              <button class="tiny-btn edit-btn" data-id="${escapeHtml(rule.id)}">编辑</button>
+              <button class="tiny-btn toggle-btn" data-id="${escapeHtml(rule.id)}">${rule.enabled ? "停用" : "启用"}</button>
+              <button class="tiny-btn delete-btn" data-id="${escapeHtml(rule.id)}">删除</button>
             </div>
           </div>
           <div class="muted">${buildParamSummary(rule)}</div>

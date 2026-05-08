@@ -39,7 +39,7 @@ export async function fetchEastMoneyQuotes(watchlist) {
 
       if (latest && latest.close > 0) {
         const price = latest.close;
-        const prevClose = price - (latest.change || 0);
+        const prevClose = round(price - (latest.change || 0), 2);
         result[symbol] = {
           symbol,
           code: market === "hk"
@@ -146,6 +146,7 @@ export async function fetchSinaSuggestions(keyword) {
 }
 
 export async function fetchEastMoneyHistory(code, market, limit = 120) {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 120)));
   // 使用东财日 K 数据补齐均线、BBI、MACD 所需的历史数据。
   const secid = buildEastMoneySecid(code, market);
   const url =
@@ -154,7 +155,7 @@ export async function fetchEastMoneyHistory(code, market, limit = 120) {
     "&fields1=f1,f2,f3,f4,f5,f6" +
     "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61" +
     "&klt=101&fqt=1" +
-    `&lmt=${limit}&end=20500101`;
+    `&lmt=${safeLimit}&end=20500101`;
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -221,7 +222,7 @@ export async function fetchEastMoneyIntradayTrends(code, market, ndays = 1) {
       time,
       price: toNumber(price),
       avgPrice: toNumber(avgPrice),
-      volume: toNumber(volume),
+      volume: toNumber(amount),  // 使用 amount（成交额）作为 volume，单位：万元
       amount: toNumber(amount)
     };
   });
@@ -229,7 +230,7 @@ export async function fetchEastMoneyIntradayTrends(code, market, ndays = 1) {
   // volume 是累计值，转成每分钟增量
   return parsed.map((item, index) => ({
     ...item,
-    volume: index === 0 ? item.volume : Math.max(item.volume - parsed[index - 1].volume, 0)
+    volume: index === 0 ? 0 : Math.max(item.volume - parsed[index - 1].volume, 0)
   }));
 }
 
@@ -461,6 +462,9 @@ async function fetchClistPage(fs, fields, pn = 1, pz = 2000) {
     `&fields=${fields}`;
 
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`EastMoney clist HTTP ${response.status}`);
+  }
   const payload = await response.json();
   return payload?.data?.diff || [];
 }
@@ -513,58 +517,11 @@ function normalizeSuggestMarket(symbolText, code) {
   return null;
 }
 
-function normalizeQuotePrice(code, market, rawValue) {
-  const numeric = toNumber(rawValue);
-  if (!numeric) {
-    return 0;
-  }
-
-  if (isAshareEtf(code, market)) {
-    return numeric / 1000;
-  }
-
-  const byHundred = numeric / 100;
-  if (market !== "hk") {
-    return byHundred;
-  }
-
-  // 港股报价字段偶发会出现更大缩放倍率，优先做一个保守修正，
-  // 避免把价格显示成金额级别。
-  if (byHundred > 1000) {
-    const byThousand = numeric / 1000;
-    if (byThousand > 0 && byThousand < 1000) {
-      return byThousand;
-    }
-  }
-
-  return byHundred;
-}
-
-function isAshareEtf(code, market) {
-  const normalizedCode = String(code || "").trim();
-  if (market === "sz") {
-    return /^(15|16|18)/.test(normalizedCode);
-  }
-  if (market === "sh") {
-    return /^5/.test(normalizedCode);
-  }
-  if (market === "bj") {
-    // 北交所 ETF 暂无明确独立代码段，普通股票也以 8 开头，
-    // 目前北交所 ETF 极少，不做特殊缩放处理
-    return false;
-  }
-  return false;
-}
-
 function isExpired(isoText, ttlMs, now = Date.now()) {
   if (!isoText) {
     return true;
   }
   return now - new Date(isoText).getTime() >= ttlMs;
-}
-
-function hasAnyCacheForSymbols(source, symbols) {
-  return symbols.every((symbol) => Boolean(source[symbol]));
 }
 
 export function deriveStockSnapshot(stock, quotes, histories) {

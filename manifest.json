@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "A股每日复盘提醒",
   "description": "轻量化 A 股/ETF 盯盘、每日复盘提醒、自定义条件预警与打分报告插件。",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "minimum_chrome_version": "120",
   "icons": {
     "16": "assets/icons/icon-16.png",
@@ -34,5 +34,8 @@
     "https://suggest3.sinajs.cn/*",
     "https://push2.eastmoney.com/*",
     "https://push2his.eastmoney.com/*"
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }
