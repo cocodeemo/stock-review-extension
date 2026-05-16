@@ -23,7 +23,6 @@ function hasRecentMacdGolden(snapshot, lookback = 12) {
   }
 
   const recent = history.slice(-Math.max(lookback, 2));
-  let goldenSeen = false;
   let latestCross = null;
 
   for (let index = 1; index < recent.length; index += 1) {
@@ -39,14 +38,13 @@ function hasRecentMacdGolden(snapshot, lookback = 12) {
     }
 
     if (prevDif <= prevDea && currentDif > currentDea) {
-      goldenSeen = true;
       latestCross = "golden";
     } else if (prevDif >= prevDea && currentDif < currentDea) {
       latestCross = "death";
     }
   }
 
-  return goldenSeen && latestCross !== "death";
+  return latestCross === "golden";
 }
 
 function hasRecentGiantBearish(snapshot, lookback = 5, dropThreshold = 3, volumeRatioThreshold = 1.5) {
@@ -196,7 +194,7 @@ export function evaluateRule(rule, snapshot) {
         detail: `现价 ${currentPrice} / 止盈 ${takeProfit || "--"} / 止损 ${stopLoss || "--"}`
       };
     case "close_above_open": {
-      const prevClose = snapshot.prevCandle?.close || 0;
+      const prevClose = snapshot.quote?.prevClose || snapshot.prevCandle?.close || 0;
       return {
         matched: prevClose > 0 && snapshot.currentPrice > prevClose,
         detail: `今收 ${snapshot.currentPrice} > 昨收 ${prevClose}`

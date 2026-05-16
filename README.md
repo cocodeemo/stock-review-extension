@@ -85,6 +85,17 @@
 
 ## 版本记录
 
+### v1.0.7
+- 新增：盘中低分弹窗预警，每个交易日 14:50 / 16:10 扫描自选股，得分 ≤ 阈值时弹出独立浏览器窗口提醒（窗口出现在屏幕右上角，内容可滚动）
+- 新增：设置页可配置"开启盘中低分提醒"开关与得分阈值（默认 ≤ 3 分），并新增 `INTRADAY_ALERT_1450` / `INTRADAY_ALERT_1610` 闹钟
+- 新增：popup 排序模式扩展为"得分↓ / 得分↑ / 涨跌"三档循环切换
+- 新增：`manifest.json` 申请 `system.display` 权限，用于弹窗定位到屏幕右上角
+- 修复：MACD 指标 DEA 计算改为只对非空 DIF 做 EMA，避免暖机期被零值污染；同时修正 warmup 长度
+- 修复：MACD 金叉判定改为"最近一次交叉为金叉"而非"出现过金叉且未死叉"，更贴合实战语义
+- 修复：`close_above_open` 规则优先取实时行情的 `prevClose`，缺失时回退到历史 K 线昨收
+- 改进：`uid()` 改用 `crypto.randomUUID()` 生成，碰撞概率更低
+- 改进：dashboard tab 按钮 active 态选择器加权，避免被 `.ghost-btn` 覆盖
+
 ### v1.0.6
 - 安全加固：统一所有页面的 HTML 转义函数，消除潜在 XSS 风险（dashboard、options、report 均改用 `utils.js` 的 `escapeHtml()`）
 - 安全加固：`manifest.json` 新增显式 `content_security_policy`，限定 `script-src 'self'`

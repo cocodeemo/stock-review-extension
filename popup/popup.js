@@ -104,9 +104,9 @@ let selectedCode = null;
 let stockUniverse = [];
 let selectedSuggestion = null;
 
-// 排序模式：'default' | 'score' | 'change'
-const SORT_MODES = ["default", "score", "change"];
-const SORT_LABELS = { default: "默认", score: "得分", change: "涨跌" };
+// 排序模式：'default' | 'score' | 'score-asc' | 'change'
+const SORT_MODES = ["default", "score", "score-asc", "change"];
+const SORT_LABELS = { default: "默认", score: "得分↓", "score-asc": "得分↑", change: "涨跌" };
 let sortMode = "default";
 
 document.getElementById("sortBtn").addEventListener("click", () => {
@@ -605,10 +605,10 @@ function renderEmptyWatchlist() {
 function sortWatchlist(watchlist, state, latestReport) {  if (sortMode === "default") return watchlist;
 
   return [...watchlist].sort((a, b) => {
-    if (sortMode === "score") {
+    if (sortMode === "score" || sortMode === "score-asc") {
       const aScore = latestReport?.ranking?.find((r) => r.code === a.code)?.totalScore ?? -Infinity;
       const bScore = latestReport?.ranking?.find((r) => r.code === b.code)?.totalScore ?? -Infinity;
-      return bScore - aScore;
+      return sortMode === "score-asc" ? aScore - bScore : bScore - aScore;
     }
     if (sortMode === "change") {
       const aQ = state.marketCache?.quotes?.[`${a.market}${a.code}`];

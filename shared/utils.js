@@ -90,7 +90,7 @@ export function toNumber(value) {
 }
 
 export function uid(prefix = "id") {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 export function formatDate(date = new Date()) {

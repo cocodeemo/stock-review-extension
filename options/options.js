@@ -78,6 +78,8 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     reviewOnlyTradingDays: settingsForm.reviewOnlyTradingDays.checked,
     compactMode: settingsForm.compactMode.checked,
     hidePriceOnBlur: settingsForm.hidePriceOnBlur.checked,
+    intradayAlertEnabled: settingsForm.intradayAlertEnabled.checked,
+    intradayAlertScoreThreshold: Math.max(0, Math.min(10, Number(formData.get("intradayAlertScoreThreshold") ?? 3))),
     holidayOverrides: state.settings.holidayOverrides || []
   };
   await updateSettings(settings);
@@ -112,6 +114,8 @@ async function render() {
   settingsForm.reviewOnlyTradingDays.checked = state.settings.reviewOnlyTradingDays;
   settingsForm.compactMode.checked = state.settings.compactMode;
   settingsForm.hidePriceOnBlur.checked = state.settings.hidePriceOnBlur;
+  settingsForm.intradayAlertEnabled.checked = state.settings.intradayAlertEnabled ?? true;
+  settingsForm.intradayAlertScoreThreshold.value = state.settings.intradayAlertScoreThreshold ?? 3;
 
   holidayList.innerHTML = (state.settings.holidayOverrides || [])
     .map(

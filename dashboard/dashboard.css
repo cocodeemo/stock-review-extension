@@ -83,7 +83,8 @@ body {
   border: 1px solid var(--border-color);
 }
 
-.active-tab {
+.active-tab,
+.ghost-btn.active-tab {
   background: var(--accent-up);
   color: white;
   box-shadow: 0 4px 10px rgba(201, 48, 44, 0.22);

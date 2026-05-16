@@ -62,13 +62,19 @@ export function calcMACD(candles, shortPeriod = 12, longPeriod = 26, signalPerio
     if (emaShort[index] === null || emaLong[index] === null) return null;
     return round(emaShort[index] - emaLong[index], 4);
   });
-  const dea = calcEMA(dif.map((v) => v ?? 0), signalPeriod);
+  // Only pass non-null DIF values into EMA to avoid seeding with zeros during warm-up
+  const validDifValues = dif.filter((v) => v !== null);
+  const deaPartial = calcEMA(validDifValues, signalPeriod);
+  let deaIndex = 0;
+  const dea = dif.map((v) => (v === null ? null : (deaPartial[deaIndex++] ?? null)));
+
   const histogram = dif.map((value, index) => {
     if (value === null || dea[index] === null) return null;
     return round((value - dea[index]) * 2, 4);
   });
 
-  const warmupLength = longPeriod - 1 + signalPeriod - 1;
+  // First valid bar: EMA(long) needs longPeriod bars, then EMA(signal) needs signalPeriod bars on top
+  const warmupLength = longPeriod + signalPeriod - 1;
   return candles.map((_, index) => ({
     dif: index < warmupLength ? null : dif[index],
     dea: index < warmupLength ? null : dea[index],

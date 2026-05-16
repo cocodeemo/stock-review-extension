@@ -13,7 +13,9 @@ export const ALARM_NAMES = {
   EOD_UPDATE_1510: "eod-update-1510",
   EOD_UPDATE_1615: "eod-update-1615",
   DAILY_REVIEW: "daily-review",
-  POLLING: "polling-refresh"
+  POLLING: "polling-refresh",
+  INTRADAY_ALERT_1450: "intraday-alert-1450",
+  INTRADAY_ALERT_1610: "intraday-alert-1610"
 };
 
 export const DEFAULT_SETTINGS = {
@@ -28,7 +30,9 @@ export const DEFAULT_SETTINGS = {
   holidayOverrides: [],
   autoOpenDashboardAfterReview: false,
   quoteBoardSymbol: "sh000001",
-  reviewMode: "after_close"
+  reviewMode: "after_close",
+  intradayAlertEnabled: true,
+  intradayAlertScoreThreshold: 3
 };
 
 export const CACHE_POLICY = {

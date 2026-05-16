@@ -44,6 +44,11 @@
           <label class="check-row"><input name="reviewOnlyTradingDays" type="checkbox">仅交易日提醒</label>
           <label class="check-row"><input name="compactMode" type="checkbox">紧凑显示模式</label>
           <label class="check-row"><input name="hidePriceOnBlur" type="checkbox">失焦隐藏价格</label>
+          <label class="check-row"><input name="intradayAlertEnabled" type="checkbox">开启盘中低分提醒（14:50 / 16:10）</label>
+          <label>
+            <span>盘中低分提醒阈值（得分 ≤ 该值时推送通知）</span>
+            <input name="intradayAlertScoreThreshold" type="number" min="0" max="10">
+          </label>
         </form>
         <div class="tip-box">
           <strong>交易日过滤说明</strong>

@@ -51,6 +51,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAMES.POLLING) {
     await refreshAndEvaluate("polling", { forceQuotes: true, sourceLabel: "polling" });
   }
+
+  if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1450 || alarm.name === ALARM_NAMES.INTRADAY_ALERT_1610) {
+    await runIntradayScoreAlert();
+  }
 });
 
 chrome.storage.onChanged.addListener(async (changes, areaName) => {
@@ -84,6 +88,8 @@ async function handleRuntimeMessage(message) {
       return runDailyReviewReminder(true);
     case "run-review-cached":
       return runDailyReviewFromCache();
+    case "test-intraday-alert":
+      return runIntradayScoreAlert();
     case "get-stock-history":
       return fetchEastMoneyHistory(message.code, message.market, message.limit || 120);
     case "realtime-refresh": {
@@ -125,6 +131,8 @@ async function scheduleAlarms() {
   await chrome.alarms.clear(ALARM_NAMES.EOD_UPDATE_1510);
   await chrome.alarms.clear(ALARM_NAMES.EOD_UPDATE_1615);
   await chrome.alarms.clear(ALARM_NAMES.DAILY_REVIEW);
+  await chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1450);
+  await chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1610);
 
   await chrome.alarms.create(ALARM_NAMES.EOD_UPDATE_1510, {
     when: getNextDailyTime(update1510).getTime(),
@@ -150,6 +158,20 @@ async function scheduleAlarms() {
     delayInMinutes: intervalMinutes,
     periodInMinutes: intervalMinutes
   });
+
+  // 盘中低分提醒：14:50（A股收盘前）和 16:10（港股收盘后）
+  if (settings.intradayAlertEnabled) {
+    const alert1450 = parseTimeToDate("14:50");
+    const alert1610 = parseTimeToDate("16:10");
+    await chrome.alarms.create(ALARM_NAMES.INTRADAY_ALERT_1450, {
+      when: getNextDailyTime(alert1450).getTime(),
+      periodInMinutes: 24 * 60
+    });
+    await chrome.alarms.create(ALARM_NAMES.INTRADAY_ALERT_1610, {
+      when: getNextDailyTime(alert1610).getTime(),
+      periodInMinutes: 24 * 60
+    });
+  }
 }
 
 async function refreshAndEvaluate(triggerSource = "poll", options = {}) {
@@ -325,6 +347,63 @@ function getNextDailyTime(date) {
     next = new Date(next.getTime() + 24 * 60 * 60 * 1000);
   }
   return next;
+}
+
+async function runIntradayScoreAlert() {
+  const state = await getState();
+  if (!state.watchlist.length) return { skipped: true, reason: "watchlist-empty" };
+  if (!state.settings.intradayAlertEnabled) return { skipped: true, reason: "disabled" };
+
+  if (state.settings.reviewOnlyTradingDays) {
+    const tradingDay = await detectTradingDay(state);
+    if (!tradingDay) return { skipped: true, reason: "non-trading-day" };
+  }
+
+  const marketCache = await refreshMarketBundleWithCache({
+    watchlist: state.watchlist,
+    existingCache: state.marketCache,
+    historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
+    forceQuotes: true,
+    forceHistories: false,
+    quoteTtlMs: CACHE_POLICY.reviewQuoteMaxAgeMs,
+    historyTtlMs: CACHE_POLICY.historyTtlMs
+  });
+  marketCache.lastRefreshSource = "intraday-alert";
+  await saveMarketCache(marketCache);
+
+  const snapshots = state.watchlist.map((stock) =>
+    deriveStockSnapshot(stock, marketCache.quotes, marketCache.histories)
+  );
+
+  const scoreResults = evaluateScores(state.scoreRules, snapshots);
+  const threshold = Number(state.settings.intradayAlertScoreThreshold ?? 3);
+  const lowScoreItems = scoreResults.filter((r) => (r.totalScore ?? 0) <= threshold);
+
+  if (!lowScoreItems.length) return { skipped: true, reason: "no-low-score" };
+
+  const now = new Date();
+  const timeLabel = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const stocks = lowScoreItems.map((r) => ({ name: r.name, score: r.totalScore }));
+
+  const url = chrome.runtime.getURL(
+    `alert-popup/alert-popup.html?time=${encodeURIComponent(timeLabel)}&threshold=${threshold}&stocks=${encodeURIComponent(JSON.stringify(stocks))}`
+  );
+
+  // Fixed window size: content scrolls if too many stocks
+  const windowHeight = Math.min(280 + lowScoreItems.length * 45, 500);
+  const screen = await chrome.system.display.getInfo();
+  const display = screen[0]?.workArea ?? { top: 0, left: 0, width: 1920, height: 1080 };
+  await chrome.windows.create({
+    url,
+    type: "popup",
+    width: 340,
+    height: windowHeight,
+    left: display.left + display.width - 360,
+    top: display.top + 20,
+    focused: true
+  });
+
+  return { alerted: lowScoreItems.length };
 }
 
 async function runDailyReviewFromCache() {

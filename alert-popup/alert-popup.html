@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>盘中低分提醒</title>
+    <link rel="stylesheet" href="alert-popup.css">
+  </head>
+  <body>
+    <div class="alert-container">
+      <div class="alert-header">
+        <span id="alertTitle" class="alert-title">盘中低分提醒</span>
+        <button id="closeBtn" class="close-btn" title="关闭">×</button>
+      </div>
+      <div class="alert-body">
+        <p id="alertMessage" class="alert-message"></p>
+        <div id="stockList" class="stock-list"></div>
+      </div>
+    </div>
+    <script type="module" src="alert-popup.js"></script>
+  </body>
+</html>
