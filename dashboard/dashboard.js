@@ -485,9 +485,9 @@ async function refreshIntradayForSelection(force = false) {
 
   if (response?.ok && Array.isArray(response.data)) {
     intradayBySymbol[symbol] = response.data;
-    const keys = Object.keys(intradayBySymbol);
-    if (keys.length > 10) {
-      delete intradayBySymbol[keys[0]];
+    while (Object.keys(intradayBySymbol).length > 10) {
+      const oldestKey = Object.keys(intradayBySymbol)[0];
+      delete intradayBySymbol[oldestKey];
     }
   }
 

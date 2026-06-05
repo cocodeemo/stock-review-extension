@@ -218,20 +218,26 @@ function buildParamSummary(rule) {
   const p = rule.params || {};
   const t = rule.type || "";
   const parts = [];
-  const periodTypes = ["ma_above", "ma_below", "bbi_above", "bbi_below", "macd_golden_cross", "macd_death_cross", "kdj_golden_cross", "kdj_death_cross", "volume_surge", "close_above_open", "price_near_ma"];
-  const thresholdTypes = ["ma_above", "ma_below", "price_near_ma"];
-  const volumeTypes = ["volume_surge"];
-  const dropTypes = ["consecutive_drop", "consecutive_rise"];
+  const periodTypes = ["price_above_ma", "price_below_ma"];
+  const thresholdTypes = [
+    "daily_change_pct_gte",
+    "daily_change_pct_lte",
+    "daily_abs_change_pct_gte",
+    "volume_ratio_gte",
+    "volume_ratio_lte"
+  ];
+  const lookbackTypes = ["macd_golden_cross", "no_giant_bearish_candle", "trend_up"];
 
   if (periodTypes.includes(t) && p.period != null) parts.push(`周期 ${p.period}`);
   if (thresholdTypes.includes(t) && p.threshold != null) parts.push(`阈值 ${p.threshold}`);
-  if (volumeTypes.includes(t)) {
-    if (p.lookback != null) parts.push(`回看 ${p.lookback}`);
+  if (lookbackTypes.includes(t) && p.lookback != null) parts.push(`回看 ${p.lookback}`);
+  if (t === "no_giant_bearish_candle") {
+    if (p.dropThreshold != null) parts.push(`跌幅阈值 ${p.dropThreshold}%`);
     if (p.volumeRatioThreshold != null) parts.push(`放量 ${p.volumeRatioThreshold}x`);
   }
-  if (dropTypes.includes(t)) {
-    if (p.lookback != null) parts.push(`回看 ${p.lookback}`);
-    if (p.dropThreshold != null) parts.push(`跌幅 ${p.dropThreshold}`);
+  if (t === "trend_up") {
+    if (p.minSlopePct != null) parts.push(`最小斜率 ${p.minSlopePct}%/日`);
+    if (p.minR2 != null) parts.push(`R² ≥ ${p.minR2}`);
   }
   if (parts.length === 0) {
     if (p.period != null) parts.push(`周期 ${p.period}`);

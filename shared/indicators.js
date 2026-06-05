@@ -93,10 +93,18 @@ export function calcKDJ(candles, period = 9) {
     const highestHigh = Math.max(...window.map((item) => toNumber(item.high)));
     const close = toNumber(candle.close);
     const rsvBase = highestHigh - lowestLow;
-    const rsv = rsvBase === 0 ? 50 : ((close - lowestLow) / rsvBase) * 100;
-    const k = round((2 / 3) * previousK + (1 / 3) * rsv, 3);
-    const d = round((2 / 3) * previousD + (1 / 3) * k, 3);
-    const j = round(3 * k - 2 * d, 3);
+    let k, d, j;
+    if (rsvBase === 0) {
+      // 高低相等的平窗：保留上一根 K/D，避免数值跳变。
+      k = previousK;
+      d = previousD;
+      j = round(3 * k - 2 * d, 3);
+    } else {
+      const rsv = ((close - lowestLow) / rsvBase) * 100;
+      k = round((2 / 3) * previousK + (1 / 3) * rsv, 3);
+      d = round((2 / 3) * previousD + (1 / 3) * k, 3);
+      j = round(3 * k - 2 * d, 3);
+    }
 
     result.push({ k, d, j });
     previousK = k;

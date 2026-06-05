@@ -14,16 +14,20 @@ document.getElementById("alertTitle").textContent = `盘中预警 ${timeLabel}`;
 document.getElementById("alertMessage").textContent = `以下股票得分 ≤${threshold} 分：`;
 
 const stockList = document.getElementById("stockList");
-stockList.innerHTML = stocks
-  .map(
-    (stock) => `
-      <div class="stock-item">
-        <span class="stock-name">${stock.name}</span>
-        <span class="stock-score">${stock.score}分</span>
-      </div>
-    `
-  )
-  .join("");
+stockList.replaceChildren(
+  ...stocks.map((stock) => {
+    const item = document.createElement("div");
+    item.className = "stock-item";
+    const name = document.createElement("span");
+    name.className = "stock-name";
+    name.textContent = stock?.name ?? "";
+    const score = document.createElement("span");
+    score.className = "stock-score";
+    score.textContent = `${stock?.score ?? ""}分`;
+    item.append(name, score);
+    return item;
+  })
+);
 
 document.getElementById("closeBtn").addEventListener("click", () => {
   window.close();

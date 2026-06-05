@@ -8,6 +8,7 @@ import {
   buildEastMoneySecid,
   buildFullSymbol,
   formatDate,
+  formatStockCode,
   inferMarket,
   round,
   toNumber
@@ -110,11 +111,7 @@ export async function fetchSinaSuggestions(keyword) {
   }
 
   const url = `https://suggest3.sinajs.cn/suggest/key=${encodeURIComponent(text)}`;
-  const response = await fetch(url, {
-    headers: {
-      Referer: "https://finance.sina.com.cn/"
-    }
-  });
+  const response = await fetch(url);
   const buffer = await response.arrayBuffer();
   const raw = new TextDecoder("gbk").decode(buffer);
   const match = raw.match(/"([^"]*)"/);
@@ -273,37 +270,52 @@ export async function refreshMarketBundleWithCache({
   const quoteUpdatedAtBySymbol = { ...cache.quoteUpdatedAtBySymbol };
   const historyUpdatedAtBySymbol = { ...cache.historyUpdatedAtBySymbol };
 
-  // 缓存 key 迁移：当 watchlist 的 market 修正后（如 sz→bj），将旧 key 数据移到新 key
-  const ALL_MARKETS = ["sh", "sz", "hk", "bj"];
+  // 缓存 key 迁移：当 watchlist 的 market 修正后（如 sz→bj），将旧 key 数据移到新 key。
+  // 通过遍历现有缓存 key 来定位，避免遗漏（例如港股 code 长度不一致导致拼接结果不同）。
+  const correctSymbolByCode = new Map();
   for (const item of watchlist) {
-    const correctSymbol = buildFullSymbol(item.code, item.market);
-    for (const oldMarket of ALL_MARKETS) {
-      if (oldMarket === item.market) continue;
-      const oldSymbol = `${oldMarket}${item.code}`;
-      if (quotes[oldSymbol] && !quotes[correctSymbol]) {
-        quotes[correctSymbol] = { ...quotes[oldSymbol], symbol: correctSymbol, market: item.market };
-        delete quotes[oldSymbol];
-        if (quoteUpdatedAtBySymbol[oldSymbol]) {
-          quoteUpdatedAtBySymbol[correctSymbol] = quoteUpdatedAtBySymbol[oldSymbol];
-          delete quoteUpdatedAtBySymbol[oldSymbol];
-        }
-      }
-      if (histories[oldSymbol] && !histories[correctSymbol]) {
-        histories[correctSymbol] = histories[oldSymbol];
-        delete histories[oldSymbol];
-        if (historyUpdatedAtBySymbol[oldSymbol]) {
-          historyUpdatedAtBySymbol[correctSymbol] = historyUpdatedAtBySymbol[oldSymbol];
-          delete historyUpdatedAtBySymbol[oldSymbol];
-        }
-      }
-    }
+    correctSymbolByCode.set(formatStockCode(item.code), {
+      symbol: buildFullSymbol(item.code, item.market),
+      market: item.market
+    });
   }
+  const migrateMap = (target, updatedAt) => {
+    for (const oldSymbol of Object.keys(target)) {
+      const match = oldSymbol.match(/^([a-z]+)(\d+)$/);
+      if (!match) {
+        delete target[oldSymbol];
+        if (updatedAt) delete updatedAt[oldSymbol];
+        continue;
+      }
+      const codePart = formatStockCode(match[2]);
+      const entry = correctSymbolByCode.get(codePart);
+      if (!entry) {
+        // watchlist 中已不存在的 code，丢弃孤儿缓存。
+        delete target[oldSymbol];
+        if (updatedAt) delete updatedAt[oldSymbol];
+        continue;
+      }
+      if (oldSymbol === entry.symbol) {
+        continue;
+      }
+      if (!target[entry.symbol]) {
+        const value = target[oldSymbol];
+        target[entry.symbol] = typeof value === "object" && !Array.isArray(value)
+          ? { ...value, symbol: entry.symbol, market: entry.market }
+          : value;
+        if (updatedAt && updatedAt[oldSymbol]) {
+          updatedAt[entry.symbol] = updatedAt[oldSymbol];
+        }
+      }
+      delete target[oldSymbol];
+      if (updatedAt) delete updatedAt[oldSymbol];
+    }
+  };
+  migrateMap(quotes, quoteUpdatedAtBySymbol);
+  migrateMap(histories, historyUpdatedAtBySymbol);
 
   const symbols = watchlist.map((item) => buildFullSymbol(item.code, item.market));
   const now = Date.now();
-
-  // 缓存 key 迁移：当 watchlist 的 market 修正后（如 sz→bj），将旧 key 数据移到新 key
-  // （已在上面的循环中完成）
 
   // 先拉 history，然后从 history 缓存末尾提取 quote，
   // 避免 fetchEastMoneyQuotes 和 fetchEastMoneyHistory 对同一只股票发两次 kline 请求。
@@ -324,9 +336,6 @@ export async function refreshMarketBundleWithCache({
           histories[symbol] = freshHistory;
           historyUpdatedAtBySymbol[symbol] = new Date().toISOString();
         } catch (error) {
-          if (!histories[symbol]?.length) {
-            throw error;
-          }
           console.warn(`History refresh failed for ${symbol}, fallback to cached history`, error);
         }
       })

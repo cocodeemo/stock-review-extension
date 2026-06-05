@@ -1,5 +1,9 @@
 import { compareByScoreDesc, escapeHtml, formatDateTime, round } from "./utils.js";
 
+function escapeMarkdown(value) {
+  return String(value ?? "").replace(/([\\`*_{}\[\]()#+\-!|>])/g, "\\$1");
+}
+
 export function buildDailyReport(scoreResults, snapshots, scoreRules) {
   const sorted = [...scoreResults].sort(compareByScoreDesc);
   const totalPossibleScore = scoreRules
@@ -58,14 +62,14 @@ export function buildReportMarkdown(report) {
 
   report.ranking.forEach((item) => {
     lines.push(``);
-    lines.push(`### ${item.rank}. ${item.name} (${item.code})`);
+    lines.push(`### ${item.rank}. ${escapeMarkdown(item.name)} (${escapeMarkdown(item.code)})`);
     lines.push(`- 得分：${item.totalScore}/${report.totalPossibleScore}`);
     lines.push(`- 现价：${item.currentPrice}`);
     lines.push(`- 涨跌幅：${item.currentChangePct}%`);
     lines.push(`- MA5：${item.ma5 ?? "--"}`);
     lines.push(`- BBI：${item.bbi ?? "--"}`);
-    lines.push(`- 加分项：${item.matched.map((rule) => `${rule.ruleName}（+${rule.points}）`).join("、") || "无"}`);
-    lines.push(`- 未命中项：${item.missed.map((rule) => rule.ruleName).join("、") || "无"}`);
+    lines.push(`- 加分项：${item.matched.map((rule) => `${escapeMarkdown(rule.ruleName)}（+${rule.points}）`).join("、") || "无"}`);
+    lines.push(`- 未命中项：${item.missed.map((rule) => escapeMarkdown(rule.ruleName)).join("、") || "无"}`);
   });
 
   return lines.join("\n");

@@ -24,6 +24,7 @@ import {
 import { formatDate, isWeekend, parseTimeToDate } from "../shared/utils.js";
 
 let refreshTask = null;
+let refreshTaskOptions = null;
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDefaults();
@@ -35,35 +36,43 @@ chrome.runtime.onStartup.addListener(async () => {
   await scheduleAlarms();
 });
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === ALARM_NAMES.EOD_UPDATE_1510) {
-    await refreshAndEvaluate("scheduled-1510", { forceQuotes: true, forceHistories: true, sourceLabel: "auto-15:10" });
-  }
-
-  if (alarm.name === ALARM_NAMES.EOD_UPDATE_1615) {
-    await refreshAndEvaluate("scheduled-1615", { forceQuotes: true, forceHistories: true, sourceLabel: "auto-16:15" });
-  }
-
-  if (alarm.name === ALARM_NAMES.DAILY_REVIEW) {
-    await runDailyReviewReminder();
-  }
-
-  if (alarm.name === ALARM_NAMES.POLLING) {
-    await refreshAndEvaluate("polling", { forceQuotes: true, sourceLabel: "polling" });
-  }
-
-  if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1450 || alarm.name === ALARM_NAMES.INTRADAY_ALERT_1610) {
-    await runIntradayScoreAlert();
-  }
+chrome.alarms.onAlarm.addListener((alarm) => {
+  return handleAlarm(alarm);
 });
 
-chrome.storage.onChanged.addListener(async (changes, areaName) => {
+async function handleAlarm(alarm) {
+  try {
+    if (alarm.name === ALARM_NAMES.EOD_UPDATE_1510) {
+      await refreshAndEvaluate("scheduled-1510", { forceQuotes: true, forceHistories: true, sourceLabel: "auto-15:10" });
+      await rescheduleDailyAlarm(ALARM_NAMES.EOD_UPDATE_1510, "15:10");
+    } else if (alarm.name === ALARM_NAMES.EOD_UPDATE_1615) {
+      await refreshAndEvaluate("scheduled-1615", { forceQuotes: true, forceHistories: true, sourceLabel: "auto-16:15" });
+      await rescheduleDailyAlarm(ALARM_NAMES.EOD_UPDATE_1615, "16:15");
+    } else if (alarm.name === ALARM_NAMES.DAILY_REVIEW) {
+      await runDailyReviewReminder();
+      const { settings } = await getState();
+      await rescheduleDailyAlarm(ALARM_NAMES.DAILY_REVIEW, settings.reviewReminderTime || "15:30");
+    } else if (alarm.name === ALARM_NAMES.POLLING) {
+      await refreshAndEvaluate("polling", { forceQuotes: true, sourceLabel: "polling" });
+    } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1450) {
+      await runIntradayScoreAlert();
+      await rescheduleDailyAlarm(ALARM_NAMES.INTRADAY_ALERT_1450, "14:50");
+    } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1610) {
+      await runIntradayScoreAlert();
+      await rescheduleDailyAlarm(ALARM_NAMES.INTRADAY_ALERT_1610, "16:10");
+    }
+  } catch (error) {
+    console.error(`[sw] alarm "${alarm?.name}" failed:`, error);
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") {
     return;
   }
 
   if (changes.settings || changes.watchlist) {
-    await scheduleAlarms();
+    return scheduleAlarms();
   }
 });
 
@@ -135,20 +144,17 @@ async function scheduleAlarms() {
   await chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1610);
 
   await chrome.alarms.create(ALARM_NAMES.EOD_UPDATE_1510, {
-    when: getNextDailyTime(update1510).getTime(),
-    periodInMinutes: 24 * 60
+    when: getNextDailyTime(update1510).getTime()
   });
 
   await chrome.alarms.create(ALARM_NAMES.EOD_UPDATE_1615, {
-    when: getNextDailyTime(update1615).getTime(),
-    periodInMinutes: 24 * 60
+    when: getNextDailyTime(update1615).getTime()
   });
 
   const firstReviewTime = getNextDailyTime(reviewDate);
 
   await chrome.alarms.create(ALARM_NAMES.DAILY_REVIEW, {
-    when: firstReviewTime.getTime(),
-    periodInMinutes: 24 * 60
+    when: firstReviewTime.getTime()
   });
 
   // 盘中低频轮询闹钟，间隔由用户设置 refreshIntervalMinutes 决定
@@ -164,24 +170,41 @@ async function scheduleAlarms() {
     const alert1450 = parseTimeToDate("14:50");
     const alert1610 = parseTimeToDate("16:10");
     await chrome.alarms.create(ALARM_NAMES.INTRADAY_ALERT_1450, {
-      when: getNextDailyTime(alert1450).getTime(),
-      periodInMinutes: 24 * 60
+      when: getNextDailyTime(alert1450).getTime()
     });
     await chrome.alarms.create(ALARM_NAMES.INTRADAY_ALERT_1610, {
-      when: getNextDailyTime(alert1610).getTime(),
-      periodInMinutes: 24 * 60
+      when: getNextDailyTime(alert1610).getTime()
     });
   }
 }
 
+async function rescheduleDailyAlarm(alarmName, hhmm) {
+  const next = getNextDailyTime(parseTimeToDate(hhmm));
+  await chrome.alarms.create(alarmName, { when: next.getTime() });
+}
+
 async function refreshAndEvaluate(triggerSource = "poll", options = {}) {
   // 行情轮询入口：刷新缓存 -> 构造统一快照 -> 评估预警 -> 持久化日志。
+  // 若 in-flight 任务缺少调用方要求的 force 标志，则在其完成后再跑一遍 force，
+  // 否则强制刷新会被静默吞掉。
   if (refreshTask) {
-    return refreshTask;
+    const inFlight = refreshTaskOptions || {};
+    const needsForceQuotes = options.forceQuotes && !inFlight.forceQuotes;
+    const needsForceHistories = options.forceHistories && !inFlight.forceHistories;
+    if (!needsForceQuotes && !needsForceHistories) {
+      return refreshTask;
+    }
+    try {
+      await refreshTask;
+    } catch (_) {
+      // 上一次失败由其自身的 catch 链处理；这里不阻断 force 重跑。
+    }
   }
 
+  refreshTaskOptions = options;
   refreshTask = performRefreshAndEvaluate(triggerSource, options).finally(() => {
     refreshTask = null;
+    refreshTaskOptions = null;
   });
 
   return refreshTask;
