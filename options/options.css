@@ -1,11 +1,19 @@
 :root {
-  --bg-panel: #fff8f6;
-  --text-main: #16181d;
-  --text-muted: #67707d;
-  --accent-up: #c9302c;
-  --accent-down: #1f8b4c;
-  --border-color: #f0d3cf;
-  --panel-opacity: 0.94;
+  --bg-panel: #fffcf9;
+  --text-main: #17191f;
+  --text-muted: #646d7c;
+  --text-soft: #98a0ae;
+  --accent-up: #d63c36;
+  --accent-down: #14954e;
+  --border-color: #f0e4e0;
+  --panel-opacity: 0.96;
+
+  --radius-s: 10px;
+  --radius-m: 14px;
+  --radius-l: 18px;
+  --shadow-s: 0 1px 2px rgba(23, 25, 31, 0.04);
+  --shadow-m: 0 1px 2px rgba(23, 25, 31, 0.04), 0 8px 20px -10px rgba(23, 25, 31, 0.10);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent-up) 16%, transparent);
 }
 
 * {
@@ -14,158 +22,411 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", "PingFang SC", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(circle at top left, rgba(201, 48, 44, 0.08), transparent 30%),
-    linear-gradient(180deg, #fffdfb 0%, #eef3f9 100%);
+    radial-gradient(120% 40% at 100% 0%, color-mix(in srgb, var(--accent-up) 5%, transparent) 0%, transparent 55%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--bg-panel) 55%, white) 0%,
+      color-mix(in srgb, var(--bg-panel) 22%, #edf0f4) 100%);
+  background-attachment: fixed;
   color: var(--text-main);
 }
 
+h1, h2, h3, p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .settings-shell {
-  max-width: 1240px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 20px 48px;
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .panel {
   background: color-mix(in srgb, var(--bg-panel) calc(var(--panel-opacity) * 100%), white);
   border: 1px solid var(--border-color);
-  border-radius: 20px;
+  border-radius: var(--radius-l);
   padding: 20px;
-  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-m);
 }
 
 .section-head {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 14px;
 }
 
-.eyebrow {
-  color: var(--text-muted);
-  margin: 0 0 6px;
-}
-
-.settings-grid,
-.rule-form,
-.rule-list,
-.chip-list {
-  display: grid;
-  gap: 12px;
-}
-
-.settings-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-label span {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--text-muted);
-}
-
+/* ── 表单基础 ── */
 input,
 select,
+textarea,
 button {
   font: inherit;
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.86);
+  border-radius: var(--radius-s);
+  padding: 9px 12px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--bg-panel) 82%, white);
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-soft);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: color-mix(in srgb, var(--accent-up) 45%, var(--border-color));
+  box-shadow: var(--ring);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.settings-grid label {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.settings-grid label > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* ── 按钮 ── */
+button {
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.solid-btn {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-up) 88%, white), var(--accent-up));
+  color: white;
+  box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--accent-up) 50%, transparent);
+}
+
+.solid-btn:hover {
+  box-shadow: 0 6px 18px -5px color-mix(in srgb, var(--accent-up) 60%, transparent);
+  transform: translateY(-1px);
+}
+
+.ghost-btn {
+  background: color-mix(in srgb, var(--bg-panel) 82%, white);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.ghost-btn:hover {
+  color: var(--text-main);
+  border-color: color-mix(in srgb, var(--accent-up) 30%, var(--border-color));
+}
+
+.tiny-btn {
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-panel) 80%, white);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.tiny-btn:hover {
+  color: var(--text-main);
+  border-color: color-mix(in srgb, var(--accent-up) 30%, var(--border-color));
+}
+
+.tiny-btn.delete-btn:hover {
+  color: var(--accent-up);
+  background: color-mix(in srgb, var(--accent-up) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent-up) 25%, transparent);
+}
+
+/* ── 开关行：现代 toggle switch ── */
 .check-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-top: 22px;
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 70%, white);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
 }
 
-.check-row input {
-  width: auto;
+.check-row:hover {
+  border-color: color-mix(in srgb, var(--accent-up) 22%, var(--border-color));
+  background: color-mix(in srgb, var(--bg-panel) 88%, white);
 }
 
-.tip-box,
-.rule-card {
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.7);
-  padding: 14px;
+.check-row input[type="checkbox"],
+.rule-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+  cursor: pointer;
+  transition: background 0.18s ease;
 }
 
-.holiday-form,
-.rule-row,
-.mini-grid {
+.check-row input[type="checkbox"]::after,
+.rule-toggle input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(23, 25, 31, 0.25);
+  transition: transform 0.18s cubic-bezier(0.22, 0.9, 0.32, 1);
+}
+
+.check-row input[type="checkbox"]:checked,
+.rule-toggle input[type="checkbox"]:checked {
+  background: var(--accent-up);
+}
+
+.check-row input[type="checkbox"]:checked::after,
+.rule-toggle input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+}
+
+.check-row input[type="checkbox"]:focus-visible {
+  box-shadow: var(--ring);
+}
+
+/* ── 提示框 ── */
+.tip-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--accent-up) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-up) 12%, transparent);
+}
+
+.tip-box strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-up);
+  margin-bottom: 4px;
+}
+
+.tip-box p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* ── 节假日 ── */
+.holiday-form {
   display: grid;
-  gap: 10px;
-}
-
-.holiday-form,
-.rule-row {
   grid-template-columns: 1fr auto;
-}
-
-.mini-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .chip-list {
-  grid-template-columns: repeat(auto-fit, minmax(180px, max-content));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 7px;
+  padding: 4px 5px 4px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid var(--border-color);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--accent-up) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-up) 15%, transparent);
 }
 
-.solid-btn,
-.ghost-btn,
-.tiny-btn {
+.chip .tiny-btn {
+  padding: 1px 8px;
+  font-size: 11px;
+  border-radius: 999px;
   border: none;
-  cursor: pointer;
-  border-radius: 999px;
+  background: transparent;
 }
 
-.solid-btn {
-  background: var(--accent-up);
-  color: white;
-  padding: 10px 16px;
+.chip .tiny-btn:hover {
+  background: color-mix(in srgb, var(--accent-up) 12%, transparent);
+  color: var(--accent-up);
 }
 
-.ghost-btn {
-  background: rgba(255, 255, 255, 0.92);
+/* ── 规则编辑器 ── */
+.rule-form {
+  margin-bottom: 14px;
+}
+
+.rule-card {
+  padding: 14px;
+  border-radius: var(--radius-m);
   border: 1px solid var(--border-color);
-  padding: 10px 16px;
+  background: color-mix(in srgb, var(--bg-panel) 76%, white);
+  box-shadow: var(--shadow-s);
 }
 
-.tiny-btn {
-  padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.05);
+.rule-card + .rule-card {
+  margin-top: 10px;
 }
 
-.muted {
-  color: var(--text-muted);
+.rule-card .section-head {
+  margin-bottom: 8px;
 }
 
-@media (max-width: 900px) {
-  .settings-grid,
-  .mini-grid,
-  .holiday-form,
-  .rule-row {
+.rule-card .section-head strong {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.rule-card .section-head > div:last-child {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.mini-field {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.mini-field input {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  border-radius: 8px;
+}
+
+.rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rule-list {
+  display: grid;
+  gap: 10px;
+}
+
+/* ── 滑杆 ── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-up);
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 4px rgba(23, 25, 31, 0.25);
+  transition: transform 0.12s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type="range"]:focus {
+  box-shadow: none;
+}
+
+@media (max-width: 560px) {
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 }

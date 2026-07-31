@@ -206,31 +206,31 @@ export const THEME_PRESETS = {
   scarlet: {
     id: "scarlet",
     name: "经典红绿",
-    accent: "#c9302c",
-    accentAlt: "#1f8b4c",
-    panel: "#fff8f6",
-    text: "#16181d",
-    muted: "#67707d",
-    border: "#f0d3cf"
+    accent: "#d63c36",
+    accentAlt: "#14954e",
+    panel: "#fffcf9",
+    text: "#17191f",
+    muted: "#646d7c",
+    border: "#f0e4e0"
   },
   graphite: {
     id: "graphite",
     name: "石墨办公",
-    accent: "#d94534",
+    accent: "#dc4534",
     accentAlt: "#1f9451",
-    panel: "#f7f8fb",
-    text: "#20242b",
-    muted: "#6d7685",
-    border: "#d9dee8"
+    panel: "#f8f9fb",
+    text: "#1f2329",
+    muted: "#646b78",
+    border: "#e3e6ec"
   },
   mist: {
     id: "mist",
     name: "淡雾隐蔽",
-    accent: "#cb4d3e",
-    accentAlt: "#15824a",
-    panel: "#f3f6f9",
-    text: "#151922",
-    muted: "#70798a",
-    border: "#dce5ef"
+    accent: "#c94f40",
+    accentAlt: "#16824a",
+    panel: "#f4f7fa",
+    text: "#171c24",
+    muted: "#6e7684",
+    border: "#e2e8f0"
   }
 };

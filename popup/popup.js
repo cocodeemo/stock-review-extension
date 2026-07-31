@@ -22,6 +22,7 @@ const missedRules = document.getElementById("missedRules");
 const detailCanvas = document.getElementById("detailCanvas");
 const headerStatus = document.getElementById("headerStatus");
 const detailPanel = document.querySelector(".detail-panel");
+const detailBackdrop = document.getElementById("detailBackdrop");
 const detailIntradayBtn = document.getElementById("detailIntradayBtn");
 const detailDailyBtn = document.getElementById("detailDailyBtn");
 
@@ -31,6 +32,7 @@ let detailCrosshairIndex = -1;
 let detailRenderState = null;
 
 function showDetailPanel() {
+  if (detailBackdrop) detailBackdrop.hidden = false;
   detailPanel.classList.add("visible");
   // 等布局完成后重绘，避免 clientWidth 为 0
   requestAnimationFrame(() => renderDetailChart());
@@ -38,6 +40,7 @@ function showDetailPanel() {
 
 function hideDetailPanel() {
   detailPanel.classList.remove("visible");
+  if (detailBackdrop) detailBackdrop.hidden = true;
 }
 
 detailIntradayBtn.addEventListener("click", async () => {
@@ -121,6 +124,23 @@ document.getElementById("sortBtn").addEventListener("click", () => {
 document.getElementById("detailDragBar").addEventListener("click", () => {
   selectedCode = null;
   hideDetailPanel();
+  render();
+});
+
+// 点击悬浮卡片外的遮罩区域：退出详情
+detailBackdrop?.addEventListener("click", async () => {
+  selectedCode = null;
+  hideDetailPanel();
+  await render();
+});
+
+// Esc 键退出详情
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && detailPanel.classList.contains("visible")) {
+    selectedCode = null;
+    hideDetailPanel();
+    render();
+  }
 });
 
 document.getElementById("refreshBtn").addEventListener("click", async () => {
@@ -159,6 +179,7 @@ closeSearchBtn.addEventListener("click", () => {
 document.getElementById("closeDetailBtn").addEventListener("click", () => {
   selectedCode = null;
   hideDetailPanel();
+  render();
 });
 
 detailPanel.addEventListener("click", (event) => {
