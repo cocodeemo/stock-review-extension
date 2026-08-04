@@ -1,4 +1,5 @@
 import { THEME_PRESETS } from "./defaults.js";
+import { escapeHtml } from "./utils.js";
 
 export function applyTheme(settings) {
   const theme = THEME_PRESETS[settings.theme] || THEME_PRESETS.scarlet;
@@ -27,23 +28,23 @@ export function createRuleParamFields(rule = {}) {
   return `
     <label class="mini-field">
       <span>周期</span>
-      <input name="period" type="number" min="1" value="${period}">
+      <input name="period" type="number" min="1" value="${escapeHtml(period)}">
     </label>
     <label class="mini-field">
       <span>阈值</span>
-      <input name="threshold" type="number" step="0.1" value="${threshold}">
+      <input name="threshold" type="number" step="0.1" value="${escapeHtml(threshold)}">
     </label>
     <label class="mini-field">
       <span>回看天数</span>
-      <input name="lookback" type="number" min="1" value="${lookback}">
+      <input name="lookback" type="number" min="1" value="${escapeHtml(lookback)}">
     </label>
     <label class="mini-field">
       <span>阴线跌幅%</span>
-      <input name="dropThreshold" type="number" min="0" step="0.1" value="${dropThreshold}">
+      <input name="dropThreshold" type="number" min="0" step="0.1" value="${escapeHtml(dropThreshold)}">
     </label>
     <label class="mini-field">
       <span>放量倍数</span>
-      <input name="volumeRatioThreshold" type="number" min="0" step="0.1" value="${volumeRatioThreshold}">
+      <input name="volumeRatioThreshold" type="number" min="0" step="0.1" value="${escapeHtml(volumeRatioThreshold)}">
     </label>
   `;
 }

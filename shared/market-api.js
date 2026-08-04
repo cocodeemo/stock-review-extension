@@ -1,6 +1,7 @@
 // 行情接口层统一封装免费数据源：
 // - 东方财富个股接口负责最新报价
 // - 东方财富 K 线接口负责历史日线
+// - 新浪 hq.sinajs.cn 作为实时报价兜底（东财 push2his 不可达时自动切换）
 // 这样 A 股和港股都能走同一条更新链路
 import { CACHE_POLICY } from "./defaults.js";
 import { attachIndicators } from "./indicators.js";
@@ -18,60 +19,153 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function fetchEastMoneyQuotes(watchlist) {
-  // 改用 push2his K 线接口取最新日报价。
-  // push2 stock/get 在 Chrome 扩展 Service Worker 中频繁 Failed to fetch，
-  // push2his 域名不同，连接池独立，可靠性更高。
+// 从最新 K 线数据构造 quote 对象的工厂函数
+function buildQuoteFromKline(item, latest, klineData, market, symbol) {
+  const price = latest.close;
+  // 优先用前一根 K 线的 close 作为昨收（更可靠），其次用 price - change 反推
+  const prevCandle = klineData && klineData.length >= 2 ? klineData[klineData.length - 2] : null;
+  const prevClose = prevCandle && prevCandle.close > 0
+    ? round(prevCandle.close, 2)
+    : round(price - (latest.change ?? 0), 2);
+  const change = latest.change ?? round(price - prevClose, 2);
+  const changePct = latest.changePct ?? (prevClose > 0 ? round((price - prevClose) / prevClose * 100, 2) : 0);
+  return {
+    symbol,
+    code: market === "hk"
+      ? String(item.code).padStart(5, "0")
+      : String(item.code).padStart(6, "0"),
+    market,
+    name: item.name || item.code,
+    open: latest.open || 0,
+    prevClose,
+    price,
+    high: latest.high || 0,
+    low: latest.low || 0,
+    volume: latest.volume || 0,
+    turnover: 0,
+    change,
+    changePct,
+    date: formatDate(),
+    time: new Date().toTimeString().slice(0, 8),
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+/**
+ * 新浪实时报价兜底：从 hq.sinajs.cn 批量获取 A 股 / 港股实时报价。
+ * 当东财 push2his 接口不可达时自动启用，保证价格和涨跌幅能正常显示。
+ */
+export async function fetchSinaQuotes(watchlist) {
   if (!watchlist.length) {
     return {};
   }
 
-  const result = {};
-
-  for (const item of watchlist) {
+  // 构造新浪符号列表：sh600519, sz000001, hk00700
+  const items = watchlist.map((item) => {
     const market = item.market || inferMarket(item.code);
-    const symbol = buildFullSymbol(item.code, market);
+    const code = market === "hk"
+      ? String(item.code).padStart(5, "0")
+      : String(item.code).padStart(6, "0");
+    return {
+      sinaSymbol: `${market}${code}`,
+      fullSymbol: buildFullSymbol(item.code, market),
+      item,
+      market
+    };
+  });
 
-    try {
-      const klineData = await fetchEastMoneyHistory(item.code, market, 1);
-      const latest = klineData && klineData.length > 0
-        ? klineData[klineData.length - 1]
-        : null;
+  // 新浪支持一次批量请求多只股票，用逗号分隔
+  const url = `https://hq.sinajs.cn/list=${items.map((i) => i.sinaSymbol).join(",")}`;
 
-      if (latest && latest.close > 0) {
-        const price = latest.close;
-        const prevClose = round(price - (latest.change || 0), 2);
-        result[symbol] = {
-          symbol,
-          code: market === "hk"
-            ? String(item.code).padStart(5, "0")
-            : String(item.code).padStart(6, "0"),
-          market,
-          name: item.name || item.code,
-          open: latest.open || 0,
-          prevClose,
-          price,
-          high: latest.high || 0,
-          low: latest.low || 0,
-          volume: latest.volume || 0,
-          turnover: 0,
-          change: latest.change || 0,
-          changePct: latest.changePct || 0,
-          date: formatDate(),
-          time: new Date().toTimeString().slice(0, 8),
-          fetchedAt: new Date().toISOString()
-        };
-      } else {
-        console.warn(`[quote] no kline data for ${symbol}`);
-      }
-    } catch (error) {
-      console.error(`[quote] kline failed for ${symbol}`, error);
-    }
-
-    await sleep(300);
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Referer: "https://finance.sina.com.cn/" }
+    });
+  } catch (err) {
+    console.error("[sina-quotes] fetch failed", err);
+    return {};
   }
 
-  console.log(`[quote] done, ${Object.keys(result).length}/${watchlist.length} ok`);
+  if (!response.ok) {
+    console.warn(`[sina-quotes] HTTP ${response.status}`);
+    return {};
+  }
+
+  const buffer = await response.arrayBuffer();
+  const raw = new TextDecoder("gbk").decode(buffer);
+  const result = {};
+
+  for (const { sinaSymbol, fullSymbol, item, market } of items) {
+    const regex = new RegExp(`var hq_str_${sinaSymbol}="([^"]*)"`);
+    const match = raw.match(regex);
+    if (!match || !match[1]) {
+      continue;
+    }
+
+    const parts = match[1].split(",");
+    if (parts.length < 4) {
+      continue;
+    }
+
+    let name, open, prevClose, price, high, low, volume, turnover, date, time;
+
+    if (market === "hk") {
+      // 港股格式: ename,name,open,prevClose,price,high,low,volume,amount,...,date,time
+      name = parts[1] || item.name || item.code;
+      open = toNumber(parts[2]);
+      prevClose = toNumber(parts[3]);
+      price = toNumber(parts[4]);
+      high = toNumber(parts[5]);
+      low = toNumber(parts[6]);
+      volume = toNumber(parts[7]);
+      turnover = toNumber(parts[8]);
+      const datePart = parts.find((p) => /^\d{4}-\d{2}-\d{2}$/.test(p));
+      const timePart = parts.find((p) => /^\d{2}:\d{2}:\d{2}$/.test(p));
+      date = datePart || formatDate();
+      time = timePart || new Date().toTimeString().slice(0, 8);
+    } else {
+      // A 股格式: name,open,prevClose,price,high,low,bid1,ask1,volume,amount,...,date,time
+      name = parts[0] || item.name || item.code;
+      open = toNumber(parts[1]);
+      prevClose = toNumber(parts[2]);
+      price = toNumber(parts[3]);
+      high = toNumber(parts[4]);
+      low = toNumber(parts[5]);
+      volume = toNumber(parts[8]);
+      turnover = toNumber(parts[9]);
+      date = parts[30] || formatDate();
+      time = parts[31] || new Date().toTimeString().slice(0, 8);
+    }
+
+    if (price > 0) {
+      const change = round(price - prevClose, 3);
+      const changePct = prevClose > 0 ? round((change / prevClose) * 100, 2) : 0;
+
+      result[fullSymbol] = {
+        symbol: fullSymbol,
+        code: market === "hk"
+          ? String(item.code).padStart(5, "0")
+          : String(item.code).padStart(6, "0"),
+        market,
+        name,
+        open,
+        prevClose,
+        price,
+        high,
+        low,
+        volume,
+        turnover,
+        change,
+        changePct,
+        date,
+        time,
+        fetchedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  console.log(`[sina-quotes] done, ${Object.keys(result).length}/${watchlist.length} ok`);
   return result;
 }
 
@@ -110,36 +204,44 @@ export async function fetchSinaSuggestions(keyword) {
     return [];
   }
 
-  const url = `https://suggest3.sinajs.cn/suggest/key=${encodeURIComponent(text)}`;
-  const response = await fetch(url);
-  const buffer = await response.arrayBuffer();
-  const raw = new TextDecoder("gbk").decode(buffer);
-  const match = raw.match(/"([^"]*)"/);
-  const payload = match?.[1] || "";
-  if (!payload) {
+  try {
+    const url = `https://suggest3.sinajs.cn/suggest/key=${encodeURIComponent(text)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      return [];
+    }
+    const buffer = await response.arrayBuffer();
+    const raw = new TextDecoder("gbk").decode(buffer);
+    const match = raw.match(/"([^"]*)"/);
+    const payload = match?.[1] || "";
+    if (!payload) {
+      return [];
+    }
+
+    return payload
+      .split(";")
+      .map((item) => item.split(","))
+      .filter((parts) => parts.length >= 4)
+      .map((parts) => {
+        const name = parts[0]?.trim();
+        const marketCode = parts[3]?.trim() || "";
+        const code = marketCode.replace(/^[a-z_]+/i, "").trim();
+        const market = normalizeSuggestMarket(marketCode, code);
+        if (!name || !code || !market) {
+          return null;
+        }
+        return {
+          code: market === "hk" ? code.padStart(5, "0") : code.padStart(6, "0"),
+          market,
+          name,
+          source: "sina"
+        };
+      })
+      .filter(Boolean);
+  } catch (error) {
+    console.error("[sina-suggest] fetch failed:", error);
     return [];
   }
-
-  return payload
-    .split(";")
-    .map((item) => item.split(","))
-    .filter((parts) => parts.length >= 4)
-    .map((parts) => {
-      const name = parts[0]?.trim();
-      const marketCode = parts[3]?.trim() || "";
-      const code = marketCode.replace(/^[a-z_]+/i, "").trim();
-      const market = normalizeSuggestMarket(marketCode, code);
-      if (!name || !code || !market) {
-        return null;
-      }
-      return {
-        code: market === "hk" ? code.padStart(5, "0") : code.padStart(6, "0"),
-        market,
-        name,
-        source: "sina"
-      };
-    })
-    .filter(Boolean);
 }
 
 export async function fetchEastMoneyHistory(code, market, limit = 120) {
@@ -212,43 +314,27 @@ export async function fetchEastMoneyIntradayTrends(code, market, ndays = 1) {
   }
   const payload = await response.json();
   const trends = payload?.data?.trends || [];
+  const preClose = toNumber(payload?.data?.preClose);
 
   const parsed = trends.map((row) => {
-    const [time, price, avgPrice, volume, amount] = row.split(",");
+    // 东财 trends2 返回 8 个字段: f51(时间) f52(最新价) f53(均价) f54(最高) f55(最低) f56(成交量-累计手) f57(成交额-累计) f58(均价2)
+    const parts = row.split(",");
     return {
-      time,
-      price: toNumber(price),
-      avgPrice: toNumber(avgPrice),
-      volume: toNumber(amount),  // 使用 amount（成交额）作为 volume，单位：万元
-      amount: toNumber(amount)
+      time: parts[0],
+      price: toNumber(parts[1]),
+      avgPrice: toNumber(parts[2]),
+      volume: toNumber(parts[5]),   // f56: 累计成交量（手）
+      amount: toNumber(parts[6])    // f57: 累计成交额
     };
   });
 
-  // volume 是累计值，转成每分钟增量
-  return parsed.map((item, index) => ({
+  // volume 是累计值，转成每分钟增量；首点保留原始累计值（开盘集合竞价量）
+  const points = parsed.map((item, index) => ({
     ...item,
-    volume: index === 0 ? 0 : Math.max(item.volume - parsed[index - 1].volume, 0)
+    volume: index === 0 ? item.volume : Math.max(item.volume - parsed[index - 1].volume, 0)
   }));
-}
 
-export async function fetchMarketBundle(watchlist, historyDays = 120) {
-  // 后台轮询时统一组装 quotes + histories，前台页面直接消费缓存即可。
-  const quotes = await fetchEastMoneyQuotes(watchlist);
-  const histories = {};
-
-  for (const item of watchlist) {
-    const market = item.market || inferMarket(item.code);
-    const symbol = buildFullSymbol(item.code, market);
-    histories[symbol] = await fetchEastMoneyHistory(item.code, market, historyDays);
-  }
-
-  return {
-    quotes,
-    histories,
-    quoteUpdatedAtBySymbol: Object.fromEntries(Object.keys(quotes).map((symbol) => [symbol, new Date().toISOString()])),
-    historyUpdatedAtBySymbol: Object.fromEntries(Object.keys(histories).map((symbol) => [symbol, new Date().toISOString()])),
-    lastUpdatedAt: new Date().toISOString()
-  };
+  return { preClose, points };
 }
 
 export async function refreshMarketBundleWithCache({
@@ -317,8 +403,7 @@ export async function refreshMarketBundleWithCache({
   const symbols = watchlist.map((item) => buildFullSymbol(item.code, item.market));
   const now = Date.now();
 
-  // 先拉 history，然后从 history 缓存末尾提取 quote，
-  // 避免 fetchEastMoneyQuotes 和 fetchEastMoneyHistory 对同一只股票发两次 kline 请求。
+  // 先拉 history（长TTL 6h），行情单独走实时K线请求（短TTL），互不依赖
   const staleHistoryItems = watchlist.filter((item) => {
     const symbol = buildFullSymbol(item.code, item.market);
     return forceHistories || isExpired(historyUpdatedAtBySymbol[symbol], historyTtlMs, now) || !histories[symbol]?.length;
@@ -345,48 +430,43 @@ export async function refreshMarketBundleWithCache({
     }
   }
 
-  // 从 history 缓存中提取最新日报价
+  // 行情刷新：拉取最新1条K线获取实时报价（不从history缓存提取，避免history 6h TTL内行情不更新）
+  // forceQuotes=true + quoteTtlMs=0 表示强制刷新全部；否则按 quoteTtlMs 过期检查
   const staleQuoteSymbols = watchlist
     .map((item) => buildFullSymbol(item.code, item.market))
-    .filter((symbol) => forceQuotes || isExpired(quoteUpdatedAtBySymbol[symbol], quoteTtlMs, now));
+    .filter((symbol) => isExpired(quoteUpdatedAtBySymbol[symbol], quoteTtlMs, now));
 
-  for (const symbol of staleQuoteSymbols) {
-    const klineData = histories[symbol];
-    const latest = klineData && klineData.length > 0
-      ? klineData[klineData.length - 1]
-      : null;
+  const staleQuoteSet = new Set(staleQuoteSymbols);
+  const staleQuoteItems = watchlist.filter((item) =>
+    staleQuoteSet.has(buildFullSymbol(item.code, item.market))
+  );
 
-    if (latest && latest.close > 0) {
-      const item = watchlist.find((w) => buildFullSymbol(w.code, w.market) === symbol);
-      const market = item?.market || "sz";
-      const price = latest.close;
-      const prevClose = price - (latest.change || 0);
-      quotes[symbol] = {
-        symbol,
-        code: market === "hk"
-          ? String(item.code).padStart(5, "0")
-          : String(item.code).padStart(6, "0"),
-        market,
-        name: item?.name || item?.code || "",
-        open: latest.open || 0,
-        prevClose,
-        price,
-        high: latest.high || 0,
-        low: latest.low || 0,
-        volume: latest.volume || 0,
-        turnover: 0,
-        change: latest.change || 0,
-        changePct: latest.changePct || 0,
-        date: formatDate(),
-        time: new Date().toTimeString().slice(0, 8),
-        fetchedAt: new Date().toISOString()
-      };
-      quoteUpdatedAtBySymbol[symbol] = new Date().toISOString();
+  for (let batchStart = 0; batchStart < staleQuoteItems.length; batchStart += BATCH_SIZE) {
+    const batch = staleQuoteItems.slice(batchStart, batchStart + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (item) => {
+        const symbol = buildFullSymbol(item.code, item.market);
+        const market = item.market || inferMarket(item.code);
+        try {
+          const freshKline = await fetchEastMoneyHistory(item.code, market, 1);
+          const latest = freshKline && freshKline.length > 0 ? freshKline[freshKline.length - 1] : null;
+          if (latest && latest.close > 0) {
+            quotes[symbol] = buildQuoteFromKline(item, latest, freshKline, market, symbol);
+            quoteUpdatedAtBySymbol[symbol] = new Date().toISOString();
+          }
+        } catch (error) {
+          console.warn(`[quote-refresh] failed for ${symbol}, using cached quote`, error);
+          // 请求失败时保留旧缓存行情，不清空
+        }
+      })
+    );
+    if (batchStart + BATCH_SIZE < staleQuoteItems.length) {
+      await sleep(CACHE_POLICY.requestGapMs * BATCH_SIZE);
     }
   }
 
   // 如果还有 symbol 没有 quote（history 缓存仍为空），单独拉 1 条 kline 作兜底
-  // 直接调 fetchEastMoneyHistory 而非 fetchEastMoneyQuotes，避免对同一只股票发两次请求
+  // 直接调 fetchEastMoneyHistory 拉取最新1条K线获取实时报价
   const missingQuoteItems = watchlist.filter((item) => {
     const symbol = buildFullSymbol(item.code, item.market);
     return !quotes[symbol] || !quotes[symbol].price;
@@ -401,28 +481,7 @@ export async function refreshMarketBundleWithCache({
           const klineData = await fetchEastMoneyHistory(item.code, market, 1);
           const latest = klineData && klineData.length > 0 ? klineData[klineData.length - 1] : null;
           if (latest && latest.close > 0) {
-            const price = latest.close;
-            const prevClose = price - (latest.change || 0);
-            quotes[symbol] = {
-              symbol,
-              code: market === "hk"
-                ? String(item.code).padStart(5, "0")
-                : String(item.code).padStart(6, "0"),
-              market,
-              name: item.name || item.code,
-              open: latest.open || 0,
-              prevClose,
-              price,
-              high: latest.high || 0,
-              low: latest.low || 0,
-              volume: latest.volume || 0,
-              turnover: 0,
-              change: latest.change || 0,
-              changePct: latest.changePct || 0,
-              date: formatDate(),
-              time: new Date().toTimeString().slice(0, 8),
-              fetchedAt: new Date().toISOString()
-            };
+            quotes[symbol] = buildQuoteFromKline(item, latest, klineData, market, symbol);
             quoteUpdatedAtBySymbol[symbol] = new Date().toISOString();
           }
         } catch (error) {
@@ -430,6 +489,25 @@ export async function refreshMarketBundleWithCache({
         }
       })
     );
+  }
+
+  // 最终兜底：东财 kline 仍然失败的股票，用新浪批量取实时报价
+  const stillMissingItems = watchlist.filter((item) => {
+    const symbol = buildFullSymbol(item.code, item.market);
+    return !quotes[symbol] || !quotes[symbol].price;
+  });
+
+  if (stillMissingItems.length > 0) {
+    console.log(`[bundle] ${stillMissingItems.length} quotes still missing, trying Sina fallback...`);
+    try {
+      const sinaQuotes = await fetchSinaQuotes(stillMissingItems);
+      for (const [symbol, quote] of Object.entries(sinaQuotes)) {
+        quotes[symbol] = quote;
+        quoteUpdatedAtBySymbol[symbol] = new Date().toISOString();
+      }
+    } catch (err) {
+      console.warn("[bundle] Sina fallback failed", err);
+    }
   }
 
   return {
@@ -530,7 +608,11 @@ function isExpired(isoText, ttlMs, now = Date.now()) {
   if (!isoText) {
     return true;
   }
-  return now - new Date(isoText).getTime() >= ttlMs;
+  const ts = new Date(isoText).getTime();
+  if (Number.isNaN(ts)) {
+    return true;
+  }
+  return now - ts >= ttlMs;
 }
 
 export function deriveStockSnapshot(stock, quotes, histories) {
@@ -583,7 +665,7 @@ export async function searchEastMoneyStocks(keyword) {
     return items.slice(0, 10).map((item) => ({
       code: item.qtmc || item.zscode || "",
       name: item.qtnmc || item.zsname || "",
-      market: item.qtmtp === "2" ? "hk" : item.zsmarket === "hgt" ? "hk" : "sh",
+      market: inferMarket(item.qtmc || item.zscode || ""),
       changePct: item.qtf03 || 0,
       price: item.qtqp || 0
     })).filter((item) => item.code && item.name);

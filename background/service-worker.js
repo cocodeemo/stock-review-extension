@@ -43,26 +43,38 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function handleAlarm(alarm) {
   try {
     if (alarm.name === ALARM_NAMES.EOD_UPDATE_1510) {
-      await refreshAndEvaluate("scheduled-1510", { forceQuotes: true, forceHistories: true, sourceLabel: "auto-15:10" });
-      await rescheduleDailyAlarm(ALARM_NAMES.EOD_UPDATE_1510, "15:10");
+      await refreshAndEvaluate("scheduled-1510", { forceQuotes: true, forceHistories: true, quoteTtlMs: 0, sourceLabel: "auto-15:10" });
     } else if (alarm.name === ALARM_NAMES.EOD_UPDATE_1615) {
-      await refreshAndEvaluate("scheduled-1615", { forceQuotes: true, forceHistories: true, sourceLabel: "auto-16:15" });
-      await rescheduleDailyAlarm(ALARM_NAMES.EOD_UPDATE_1615, "16:15");
+      await refreshAndEvaluate("scheduled-1615", { forceQuotes: true, forceHistories: true, quoteTtlMs: 0, sourceLabel: "auto-16:15" });
     } else if (alarm.name === ALARM_NAMES.DAILY_REVIEW) {
       await runDailyReviewReminder();
-      const { settings } = await getState();
-      await rescheduleDailyAlarm(ALARM_NAMES.DAILY_REVIEW, settings.reviewReminderTime || "15:30");
     } else if (alarm.name === ALARM_NAMES.POLLING) {
       await refreshAndEvaluate("polling", { forceQuotes: true, sourceLabel: "polling" });
     } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1450) {
       await runIntradayScoreAlert();
-      await rescheduleDailyAlarm(ALARM_NAMES.INTRADAY_ALERT_1450, "14:50");
     } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1610) {
       await runIntradayScoreAlert();
-      await rescheduleDailyAlarm(ALARM_NAMES.INTRADAY_ALERT_1610, "16:10");
     }
   } catch (error) {
     console.error(`[sw] alarm "${alarm?.name}" failed:`, error);
+  } finally {
+    // 无论成功或失败，都要重新调度一次性闹钟，否则次日不再触发
+    try {
+      if (alarm.name === ALARM_NAMES.EOD_UPDATE_1510) {
+        await rescheduleDailyAlarm(ALARM_NAMES.EOD_UPDATE_1510, "15:10");
+      } else if (alarm.name === ALARM_NAMES.EOD_UPDATE_1615) {
+        await rescheduleDailyAlarm(ALARM_NAMES.EOD_UPDATE_1615, "16:15");
+      } else if (alarm.name === ALARM_NAMES.DAILY_REVIEW) {
+        const { settings } = await getState();
+        await rescheduleDailyAlarm(ALARM_NAMES.DAILY_REVIEW, settings.reviewReminderTime || "15:30");
+      } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1450) {
+        await rescheduleDailyAlarm(ALARM_NAMES.INTRADAY_ALERT_1450, "14:50");
+      } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1610) {
+        await rescheduleDailyAlarm(ALARM_NAMES.INTRADAY_ALERT_1610, "16:10");
+      }
+    } catch (rescheduleErr) {
+      console.error(`[sw] reschedule for "${alarm?.name}" failed:`, rescheduleErr);
+    }
   }
 }
 
@@ -71,7 +83,21 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  if (changes.settings || changes.watchlist) {
+  // 仅当与闹钟调度相关的设置字段变更时才重新调度
+  const alarmRelatedKeys = ["refreshIntervalMinutes", "reviewReminderTime", "intradayAlertEnabled"];
+  if (changes.settings) {
+    const oldSettings = changes.settings.oldValue || {};
+    const newSettings = changes.settings.newValue || {};
+    const hasAlarmChange = alarmRelatedKeys.some(
+      (key) => JSON.stringify(oldSettings[key]) !== JSON.stringify(newSettings[key])
+    );
+    if (hasAlarmChange) {
+      return scheduleAlarms();
+    }
+  }
+  // watchlist 变更时也重新调度，确保新增股票纳入轮询范围
+  // (scheduleAlarms 本身不读 watchlist，但保留了此触发点以便未来扩展)
+  if (changes.watchlist) {
     return scheduleAlarms();
   }
 });
@@ -90,9 +116,9 @@ async function handleRuntimeMessage(message) {
   // 前台页面通过 runtime message 主动触发刷新、生成复盘或打开控制台页面。
   switch (message?.type) {
     case "force-refresh":
-      return refreshAndEvaluate("manual", { forceQuotes: true, forceHistories: true, sourceLabel: "manual" });
+      return refreshAndEvaluate("manual", { forceQuotes: true, forceHistories: true, quoteTtlMs: 0, sourceLabel: "manual" });
     case "soft-refresh":
-      return refreshAndEvaluate("foreground", { forceQuotes: true, sourceLabel: "popup-open" });
+      return refreshAndEvaluate("foreground", { forceQuotes: true, quoteTtlMs: CACHE_POLICY.quoteRealtimeTtlMs, sourceLabel: "popup-open" });
     case "run-review":
       return runDailyReviewReminder(true);
     case "run-review-cached":
@@ -137,11 +163,13 @@ async function scheduleAlarms() {
   const update1510 = parseTimeToDate("15:10");
   const update1615 = parseTimeToDate("16:15");
 
-  await chrome.alarms.clear(ALARM_NAMES.EOD_UPDATE_1510);
-  await chrome.alarms.clear(ALARM_NAMES.EOD_UPDATE_1615);
-  await chrome.alarms.clear(ALARM_NAMES.DAILY_REVIEW);
-  await chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1450);
-  await chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1610);
+  await Promise.all([
+    chrome.alarms.clear(ALARM_NAMES.EOD_UPDATE_1510),
+    chrome.alarms.clear(ALARM_NAMES.EOD_UPDATE_1615),
+    chrome.alarms.clear(ALARM_NAMES.DAILY_REVIEW),
+    chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1450),
+    chrome.alarms.clear(ALARM_NAMES.INTRADAY_ALERT_1610)
+  ]);
 
   await chrome.alarms.create(ALARM_NAMES.EOD_UPDATE_1510, {
     when: getNextDailyTime(update1510).getTime()
@@ -222,7 +250,7 @@ async function performRefreshAndEvaluate(triggerSource = "poll", options = {}) {
     historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
     forceQuotes: Boolean(options.forceQuotes),
     forceHistories: Boolean(options.forceHistories),
-    quoteTtlMs: CACHE_POLICY.quotePollingTtlMs,
+    quoteTtlMs: options.quoteTtlMs ?? CACHE_POLICY.quotePollingTtlMs,
     historyTtlMs: CACHE_POLICY.historyTtlMs
   });
   marketCache.lastRefreshSource = options.sourceLabel || triggerSource;
@@ -236,9 +264,7 @@ async function performRefreshAndEvaluate(triggerSource = "poll", options = {}) {
   const uniqueHits = dedupeTriggeredHits(hits, state.lastAlertState);
 
   if (uniqueHits.length > 0) {
-    for (const hit of uniqueHits) {
-      await notifyAlert(hit);
-    }
+    await Promise.all(uniqueHits.map((hit) => notifyAlert(hit)));
 
     const logs = [
       ...uniqueHits,
@@ -328,7 +354,7 @@ function buildAlertState(hits) {
 }
 
 function dedupeTriggeredHits(hits, lastAlertState) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatDate(new Date());
   return hits.filter((hit) => {
     const key = `${hit.symbol}:${hit.ruleId}`;
     const previous = lastAlertState[key];

@@ -1,4 +1,4 @@
-import { compareByScoreDesc, escapeHtml, formatDateTime, round } from "./utils.js";
+import { compareByScoreDesc, buildFullSymbol, escapeHtml, formatDateTime, round } from "./utils.js";
 
 function escapeMarkdown(value) {
   return String(value ?? "").replace(/([\\`*_{}\[\]()#+\-!|>])/g, "\\$1");
@@ -11,11 +11,11 @@ export function buildDailyReport(scoreResults, snapshots, scoreRules) {
     .reduce((sum, rule) => sum + Number(rule.points || 0), 0);
 
   const snapshotMap = Object.fromEntries(
-    snapshots.map((snapshot) => [snapshot.stock.code, snapshot])
+    snapshots.map((snapshot) => [buildFullSymbol(snapshot.stock.code, snapshot.stock.market), snapshot])
   );
 
   const ranking = sorted.map((item, index) => {
-    const snapshot = snapshotMap[item.code];
+    const snapshot = snapshotMap[buildFullSymbol(item.code, item.market)];
     return {
       rank: index + 1,
       ...item,
@@ -64,10 +64,10 @@ export function buildReportMarkdown(report) {
     lines.push(``);
     lines.push(`### ${item.rank}. ${escapeMarkdown(item.name)} (${escapeMarkdown(item.code)})`);
     lines.push(`- 得分：${item.totalScore}/${report.totalPossibleScore}`);
-    lines.push(`- 现价：${item.currentPrice}`);
-    lines.push(`- 涨跌幅：${item.currentChangePct}%`);
-    lines.push(`- MA5：${item.ma5 ?? "--"}`);
-    lines.push(`- BBI：${item.bbi ?? "--"}`);
+    lines.push(`- 现价：${round(item.currentPrice, 2)}`);
+    lines.push(`- 涨跌幅：${round(item.currentChangePct, 2)}%`);
+    lines.push(`- MA5：${item.ma5 != null ? round(item.ma5, 2) : "--"}`);
+    lines.push(`- BBI：${item.bbi != null ? round(item.bbi, 2) : "--"}`);
     lines.push(`- 加分项：${item.matched.map((rule) => `${escapeMarkdown(rule.ruleName)}（+${rule.points}）`).join("、") || "无"}`);
     lines.push(`- 未命中项：${item.missed.map((rule) => escapeMarkdown(rule.ruleName)).join("、") || "无"}`);
   });
@@ -82,8 +82,8 @@ export function buildReportHtml(report) {
         <section style="border:1px solid #e5d6d1;border-radius:14px;padding:16px;margin:0 0 12px;background:#fff;">
           <h3 style="margin:0 0 10px;">${escapeHtml(item.rank)}. ${escapeHtml(item.name)} (${escapeHtml(item.code)})</h3>
           <p style="margin:4px 0;">得分：<strong>${escapeHtml(item.totalScore)}/${escapeHtml(report.totalPossibleScore)}</strong></p>
-          <p style="margin:4px 0;">现价：${escapeHtml(item.currentPrice)} | 涨跌幅：${escapeHtml(item.currentChangePct)}%</p>
-          <p style="margin:4px 0;">MA5：${escapeHtml(item.ma5 ?? "--")} | BBI：${escapeHtml(item.bbi ?? "--")}</p>
+          <p style="margin:4px 0;">现价：${escapeHtml(round(item.currentPrice, 2))} | 涨跌幅：${escapeHtml(round(item.currentChangePct, 2))}%</p>
+          <p style="margin:4px 0;">MA5：${escapeHtml(item.ma5 != null ? round(item.ma5, 2) : "--")} | BBI：${escapeHtml(item.bbi != null ? round(item.bbi, 2) : "--")}</p>
           <p style="margin:4px 0;">加分项：${item.matched.map((rule) => `${escapeHtml(rule.ruleName)}(+${escapeHtml(rule.points)})`).join("、") || "无"}</p>
           <p style="margin:4px 0;">未命中项：${item.missed.map((rule) => escapeHtml(rule.ruleName)).join("、") || "无"}</p>
         </section>

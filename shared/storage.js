@@ -5,7 +5,7 @@ import {
   DEFAULT_WATCHLIST,
   STORAGE_KEYS
 } from "./defaults.js";
-import { clone, formatStockCode, normalizeMarket } from "./utils.js";
+import { clone, formatStockCode, normalizeMarket, toNumber } from "./utils.js";
 
 const DEFAULT_STATE = {
   [STORAGE_KEYS.SETTINGS]: DEFAULT_SETTINGS,
@@ -104,10 +104,10 @@ function normalizeWatchlist(items) {
     code: formatStockCode(item.code),
     market: normalizeMarket(item.code, item.market),
     name: item.name || item.code,
-    costPrice: Number(item.costPrice || 0),
-    positionQty: Number(item.positionQty || 0),
-    takeProfitPrice: Number(item.takeProfitPrice || 0),
-    stopLossPrice: Number(item.stopLossPrice || 0),
+    costPrice: toNumber(item.costPrice),
+    positionQty: toNumber(item.positionQty),
+    takeProfitPrice: toNumber(item.takeProfitPrice),
+    stopLossPrice: toNumber(item.stopLossPrice),
     note: item.note || ""
   }));
 }

@@ -282,7 +282,96 @@ export function drawCandles(canvas, candles = [], crosshairIndex = -1) {
   }
 }
 
-export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIndex = -1) {
+// 分时图布局常量
+const INTRADAY_LAYOUT = {
+  marginLeft: 54,
+  marginRight: 52,
+  marginTop: 20,
+  marginBottom: 28
+};
+
+// 交易时段配置
+const TRADING_SESSIONS = {
+  ashare: {
+    morning: { start: 570, end: 690 },    // 09:30 - 11:30
+    afternoon: { start: 780, end: 900 },   // 13:00 - 15:00
+    totalMinutes: 240,
+    timeLabels: [
+      { label: "09:30", minutes: 0 },
+      { label: "10:30", minutes: 60 },
+      { label: "11:30/13:00", minutes: 120 },
+      { label: "14:00", minutes: 180 },
+      { label: "15:00", minutes: 240 }
+    ]
+  },
+  hk: {
+    morning: { start: 570, end: 720 },    // 09:30 - 12:00
+    afternoon: { start: 780, end: 960 },   // 13:00 - 16:00
+    totalMinutes: 330,
+    timeLabels: [
+      { label: "09:30", minutes: 0 },
+      { label: "11:00", minutes: 90 },
+      { label: "12:00/13:00", minutes: 150 },
+      { label: "14:30", minutes: 240 },
+      { label: "16:00", minutes: 330 }
+    ]
+  }
+};
+
+function getTradingSessions(market) {
+  return market === "hk" ? TRADING_SESSIONS.hk : TRADING_SESSIONS.ashare;
+}
+
+// 将时间字符串转为交易分钟数（0-based）
+function timeStrToTradingMinutes(timeStr, sessions) {
+  const timePart = timeStr.split(" ")[1] || "";
+  const parts = timePart.split(":");
+  const hour = parseInt(parts[0], 10) || 0;
+  const minute = parseInt(parts[1], 10) || 0;
+  const totalMin = hour * 60 + minute;
+
+  const morningLen = sessions.morning.end - sessions.morning.start;
+  if (totalMin <= sessions.morning.end) {
+    return Math.max(0, totalMin - sessions.morning.start);
+  }
+  return morningLen + Math.max(0, totalMin - sessions.afternoon.start);
+}
+
+// 交易分钟数 → 图表 X 坐标
+function tradingMinutesToX(minutes, sessions, chartW, marginLeft) {
+  const fraction = Math.max(0, Math.min(1, minutes / sessions.totalMinutes));
+  return marginLeft + fraction * chartW;
+}
+
+// 鼠标 X 坐标 → 最近的数据点索引
+export function intradayMouseToIndex(mouseX, canvas, points, market = "sh") {
+  if (!canvas || !points.length) return -1;
+  const sessions = getTradingSessions(market);
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth > 0 ? canvas.clientWidth : Math.round(canvas.width / dpr);
+  const { marginLeft, marginRight } = INTRADAY_LAYOUT;
+  const chartW = cssWidth - marginLeft - marginRight;
+  if (chartW <= 0) return -1;
+
+  const fraction = (mouseX - marginLeft) / chartW;
+  if (fraction < -0.02 || fraction > 1.02) return -1;
+
+  const targetMinutes = Math.max(0, Math.min(sessions.totalMinutes, fraction * sessions.totalMinutes));
+
+  let bestIndex = 0;
+  let bestDiff = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const tm = timeStrToTradingMinutes(points[i].time, sessions);
+    const diff = Math.abs(tm - targetMinutes);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIndex = -1, market = "sh") {
   if (!canvas) return;
   if (!points.length) {
     const ctx = canvas.getContext("2d");
@@ -304,15 +393,18 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
 
   const width = cssWidth;
   const height = cssHeight;
-  // Left axis for price, right axis for pct change
-  const marginLeft = 54;
-  const marginRight = 52;
-  const marginTop = 20;
-  const marginBottom = 28;
+  const { marginLeft, marginRight, marginTop, marginBottom } = INTRADAY_LAYOUT;
   const chartW = width - marginLeft - marginRight;
   const chartH = height - marginTop - marginBottom;
   const priceH = Math.floor(chartH * 0.75);
   const volumeH = chartH - priceH - 8;
+
+  const sessions = getTradingSessions(market);
+
+  // 预计算每个数据点的 X 坐标（基于交易时间，而非序号）
+  const pointX = points.map((p) =>
+    tradingMinutesToX(timeStrToTradingMinutes(p.time, sessions), sessions, chartW, marginLeft)
+  );
 
   const prices = points.map((p) => p.price);
   const avgPrices = points.map((p) => p.avgPrice).filter(Boolean);
@@ -345,42 +437,30 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
     ctx.stroke();
   }
 
-  // Vertical time grid lines + noon break line
-  // Data: 09:30-11:30 (120 min) + 13:00-15:00 (120 min) = 240 points
-  // Find the noon break index (first afternoon point)
-  let noonIndex = -1;
-  for (let i = 1; i < points.length; i++) {
-    const prevHour = parseInt(points[i - 1].time.slice(11, 13), 10);
-    const curHour = parseInt(points[i].time.slice(11, 13), 10);
-    if (curHour >= 13 && prevHour <= 11) { noonIndex = i; break; }
-  }
-
-  const barWidth = chartW / Math.max(points.length - 1, 1);
+  // Vertical time grid lines at label positions
   ctx.strokeStyle = "rgba(103,112,125,0.12)";
   ctx.lineWidth = 1;
-  const timeSteps = 4;
-  for (let i = 1; i < timeSteps; i++) {
-    const x = marginLeft + (chartW / timeSteps) * i;
+  for (let i = 1; i < sessions.timeLabels.length - 1; i++) {
+    const x = tradingMinutesToX(sessions.timeLabels[i].minutes, sessions, chartW, marginLeft);
     ctx.beginPath();
     ctx.moveTo(x, marginTop);
     ctx.lineTo(x, marginTop + priceH);
     ctx.stroke();
   }
 
-  // Noon break vertical dashed line
-  if (noonIndex > 0) {
-    const nx = marginLeft + noonIndex * barWidth;
-    ctx.save();
-    ctx.strokeStyle = "rgba(103,112,125,0.35)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(nx, marginTop);
-    ctx.lineTo(nx, marginTop + priceH);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
+  // Noon break vertical dashed line (at the boundary between morning and afternoon)
+  const noonMinutes = sessions.morning.end - sessions.morning.start; // e.g. 120 for A-share, 150 for HK
+  const noonX = tradingMinutesToX(noonMinutes, sessions, chartW, marginLeft);
+  ctx.save();
+  ctx.strokeStyle = "rgba(103,112,125,0.35)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(noonX, marginTop);
+  ctx.lineTo(noonX, marginTop + priceH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 
   // Previous close baseline (horizontal dashed)
   if (prevClose > 0) {
@@ -404,39 +484,39 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
     const price = maxPrice - (maxPrice - minPrice) * (i / 4);
     const y = marginTop + (priceH / 4) * i;
     const pctChange = prevClose > 0 ? ((price - prevClose) / prevClose * 100) : 0;
-    // Left: absolute price, colored by direction
     ctx.fillStyle = pctChange > 0 ? "rgba(201,48,44,0.85)" : pctChange < 0 ? "rgba(31,139,76,0.85)" : "rgba(103,112,125,0.7)";
     ctx.textAlign = "right";
     ctx.fillText(round(price, 2), marginLeft - 4, y);
-    // Right: pct change
     const pctStr = pctChange >= 0 ? `+${pctChange.toFixed(2)}%` : `${pctChange.toFixed(2)}%`;
     ctx.fillStyle = pctChange > 0 ? "rgba(201,48,44,0.85)" : pctChange < 0 ? "rgba(31,139,76,0.85)" : "rgba(103,112,125,0.7)";
     ctx.textAlign = "left";
     ctx.fillText(pctStr, marginLeft + chartW + 4, y);
   }
 
-  // Time axis labels (bottom)
+  // Time axis labels (bottom) — based on actual trading time positions
   ctx.fillStyle = "rgba(103,112,125,0.65)";
   ctx.font = "10px 'Segoe UI', 'PingFang SC', monospace";
   ctx.textBaseline = "top";
-  const timeLabels = ["09:30", "10:30", "11:30/13:00", "14:00", "15:00"];
-  timeLabels.forEach((label, i) => {
-    const x = marginLeft + (chartW / (timeLabels.length - 1)) * i;
-    ctx.textAlign = i === 0 ? "left" : i === timeLabels.length - 1 ? "right" : "center";
-    ctx.fillText(label, x, marginTop + priceH + 5);
+  const labels = sessions.timeLabels;
+  labels.forEach((entry, i) => {
+    const x = tradingMinutesToX(entry.minutes, sessions, chartW, marginLeft);
+    ctx.textAlign = i === 0 ? "left" : i === labels.length - 1 ? "right" : "center";
+    ctx.fillText(entry.label, x, marginTop + priceH + 5);
   });
 
-  // Draw price line
+  // Draw price line (time-based x positioning)
   ctx.strokeStyle = "#2f6fed";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   let started = false;
+  let lastX = marginLeft;
   points.forEach((item, index) => {
     if (item.price == null) return;
-    const x = marginLeft + index * barWidth;
+    const x = pointX[index];
     const y = priceY(item.price);
     if (!started) { ctx.moveTo(x, y); started = true; }
     else { ctx.lineTo(x, y); }
+    lastX = x;
   });
   ctx.stroke();
 
@@ -447,7 +527,7 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
     gradient.addColorStop(0.6, "rgba(47,111,237,0.06)");
     gradient.addColorStop(1, "rgba(47,111,237,0.01)");
     ctx.fillStyle = gradient;
-    ctx.lineTo(marginLeft + (points.length - 1) * barWidth, marginTop + priceH);
+    ctx.lineTo(lastX, marginTop + priceH);
     ctx.lineTo(marginLeft, marginTop + priceH);
     ctx.closePath();
     ctx.fill();
@@ -461,7 +541,7 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
     started = false;
     points.forEach((item, index) => {
       if (item.avgPrice == null) return;
-      const x = marginLeft + index * barWidth;
+      const x = pointX[index];
       const y = priceY(item.avgPrice);
       if (!started) { ctx.moveTo(x, y); started = true; }
       else { ctx.lineTo(x, y); }
@@ -469,29 +549,31 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
     ctx.stroke();
   }
 
-  // Volume bars
-  const volumeBarWidth = Math.max(chartW / points.length, 1);
+  // Volume bars (aligned with price line x positions)
+  const volumeBarWidth = Math.max(chartW / sessions.totalMinutes, 1);
   const volumeTop = marginTop + priceH + 8;
   points.forEach((item, index) => {
-    const x = marginLeft + index * volumeBarWidth;
+    const x = pointX[index];
     const barH = Math.max((item.volume / maxVolume) * volumeH, 1);
-    const isUp = item.price >= prevClose;
+    const isUp = prevClose > 0 ? item.price >= prevClose : item.price >= (item.avgPrice || item.price);
     ctx.fillStyle = isUp ? "rgba(201,48,44,0.85)" : "rgba(31,139,76,0.85)";
-    ctx.fillRect(x, volumeTop + volumeH - barH, Math.max(volumeBarWidth - 0.3, 0.8), barH);
+    ctx.fillRect(x - volumeBarWidth / 2, volumeTop + volumeH - barH, volumeBarWidth, barH);
   });
 
-  // Volume max label (maxVolume 单位：万元)
+  // Volume max label (单位：手)
   ctx.fillStyle = "rgba(103,112,125,0.65)";
   ctx.font = "10px 'Segoe UI', 'PingFang SC', sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  const volStr = maxVolume >= 1e4 ? `VOL ${(maxVolume / 1e4).toFixed(1)}亿` : `VOL ${maxVolume.toFixed(1)}万`;
+  const volStr = maxVolume >= 1e4
+    ? `VOL ${(maxVolume / 1e4).toFixed(1)}万手`
+    : `VOL ${Math.round(maxVolume)}手`;
   ctx.fillText(volStr, marginLeft + 2, volumeTop + 2);
 
   // Crosshair
   if (crosshairIndex >= 0 && crosshairIndex < points.length) {
     const item = points[crosshairIndex];
-    const cx = marginLeft + crosshairIndex * barWidth;
+    const cx = pointX[crosshairIndex];
     const cy = priceY(item.price);
 
     ctx.save();
@@ -545,7 +627,7 @@ export function drawIntradayLine(canvas, points = [], prevClose = 0, crosshairIn
       { label: "价格", value: round(item.price, 2), accent: true },
       { label: "涨跌", value: `${sign}${changePct.toFixed(2)}%`, accent: true },
       { label: "均价", value: item.avgPrice ? round(item.avgPrice, 2) : "--" },
-      { label: "成交量", value: item.volume >= 1e8 ? (item.volume / 1e8).toFixed(2) + "亿" : (item.volume / 1e4).toFixed(0) + "万" }
+      { label: "成交量", value: item.volume >= 1e4 ? (item.volume / 1e4).toFixed(1) + "万手" : Math.round(item.volume) + "手" }
     ];
     const lineH = 17;
     const boxPadX = 9;

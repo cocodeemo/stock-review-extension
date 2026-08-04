@@ -128,10 +128,15 @@ export function compareByScoreDesc(a, b) {
 
 export function debounce(fn, delay = 250) {
   let timer = null;
-  return (...args) => {
+  const debounced = (...args) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
+  debounced.cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+  };
+  return debounced;
 }
 
 export function escapeHtml(value) {
@@ -148,5 +153,14 @@ export function safeArray(value) {
 }
 
 export function clone(value) {
+  if (value === null || value === undefined) return value;
+  // structuredClone 比 JSON.parse(JSON.stringify) 快 ~2-3x，且保留 Date/Map/Set 类型
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(value);
+    } catch (_) {
+      // 回退到 JSON 方式（某些环境 structuredClone 不可用或不支持函数）
+    }
+  }
   return JSON.parse(JSON.stringify(value));
 }

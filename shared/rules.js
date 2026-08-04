@@ -1,4 +1,4 @@
-import { percent, round } from "./utils.js";
+import { percent, round, toNumber } from "./utils.js";
 
 function compareMACDCross(snapshot, direction) {
   const prevDif = snapshot.prevMacdDif;
@@ -95,16 +95,6 @@ function linearRegression(closes) {
   return { slopePct, r2 };
 }
 
-function isTrendUp(snapshot, lookback = 20, minSlopePct = 0.05, minR2 = 0.3) {
-  const history = Array.isArray(snapshot.history) ? snapshot.history : [];
-  const n = Math.min(lookback, history.length);
-  if (n < 5) return false;
-
-  const closes = history.slice(-n).map((c) => Number(c.close));
-  const { slopePct, r2 } = linearRegression(closes);
-  return slopePct >= minSlopePct && r2 >= minR2;
-}
-
 function isKdjNotDead(snapshot) {
   const k = snapshot.kdjK;
   const d = snapshot.kdjD;
@@ -121,21 +111,21 @@ export function evaluateRule(rule, snapshot) {
   const volumeRatio = snapshot.prevVolume ? snapshot.currentVolume / snapshot.prevVolume : 0;
   const takeProfit = snapshot.stock.takeProfitPrice || 0;
   const stopLoss = snapshot.stock.stopLossPrice || 0;
-  const threshold = Number(rule.params?.threshold || 0);
-  const period = Number(rule.params?.period || 5);
-  const lookback = Number(rule.params?.lookback || 12);
-  const dropThreshold = Number(rule.params?.dropThreshold || 3);
-  const volumeRatioThreshold = Number(rule.params?.volumeRatioThreshold || 1.5);
+  const threshold = toNumber(rule.params?.threshold);
+  const period = toNumber(rule.params?.period) || 5;
+  const lookback = toNumber(rule.params?.lookback) || 12;
+  const dropThreshold = toNumber(rule.params?.dropThreshold) || 3;
+  const volumeRatioThreshold = toNumber(rule.params?.volumeRatioThreshold) || 1.5;
 
   switch (rule.type) {
     case "price_above_ma":
       return {
-        matched: Boolean(snapshot.latestCandle?.[`ma${period}`]) && currentPrice > snapshot.latestCandle[`ma${period}`],
+        matched: snapshot.latestCandle?.[`ma${period}`] != null && currentPrice > snapshot.latestCandle[`ma${period}`],
         detail: `现价 ${currentPrice} / MA${period} ${snapshot.latestCandle?.[`ma${period}`] ?? "--"}`
       };
     case "price_below_ma":
       return {
-        matched: Boolean(snapshot.latestCandle?.[`ma${period}`]) && currentPrice < snapshot.latestCandle[`ma${period}`],
+        matched: snapshot.latestCandle?.[`ma${period}`] != null && currentPrice < snapshot.latestCandle[`ma${period}`],
         detail: `现价 ${currentPrice} / MA${period} ${snapshot.latestCandle?.[`ma${period}`] ?? "--"}`
       };
     case "price_above_bbi":
@@ -226,8 +216,9 @@ export function evaluateRule(rule, snapshot) {
       const n = Math.min(lookback, snapshot.history?.length ?? 0);
       const closes = (snapshot.history ?? []).slice(-n).map((c) => Number(c.close));
       const { slopePct, r2 } = linearRegression(closes);
+      const matched = slopePct >= minSlopePct && r2 >= minR2;
       return {
-        matched: isTrendUp(snapshot, lookback, minSlopePct, minR2),
+        matched,
         detail: `近${n}日斜率 ${slopePct >= 0 ? "+" : ""}${slopePct.toFixed(3)}%/日 · R² ${r2.toFixed(2)}`
       };
     }

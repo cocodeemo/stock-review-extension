@@ -1,4 +1,4 @@
-import { drawCandles, drawIntradayLine } from "../shared/chart.js";
+import { drawCandles, drawIntradayLine, intradayMouseToIndex } from "../shared/chart.js";
 import { fetchSinaSuggestions, fetchStockUniverse } from "../shared/market-api.js";
 import { ensureDefaults, getState, saveWatchlist } from "../shared/storage.js";
 import { applyTheme, renderBadge } from "../shared/ui.js";
@@ -17,8 +17,6 @@ const selectedTitle = document.getElementById("selectedTitle");
 const selectedMeta = document.getElementById("selectedMeta");
 const selectedScore = document.getElementById("selectedScore");
 const metricGrid = document.getElementById("metricGrid");
-const matchedRules = document.getElementById("matchedRules");
-const missedRules = document.getElementById("missedRules");
 const detailCanvas = document.getElementById("detailCanvas");
 const headerStatus = document.getElementById("headerStatus");
 const detailPanel = document.querySelector(".detail-panel");
@@ -58,18 +56,28 @@ detailDailyBtn.addEventListener("click", () => {
   renderDetailChart();
 });
 
+let detailRafPending = false;
 detailCanvas.addEventListener("mousemove", (event) => {
   const rect = detailCanvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   if (!detailRenderState) return;
-  const { history, intradayData } = detailRenderState;
-  const source = detailChartMode === "intraday" ? intradayData : history.slice(-45);
-  if (!source.length) return;
-  const barWidth = detailChartMode === "intraday"
-    ? rect.width / Math.max(source.length - 1, 1)
-    : rect.width / source.length;
-  detailCrosshairIndex = Math.min(Math.floor(x / barWidth), source.length - 1);
-  renderDetailChart();
+  const { history, intradayData, stock } = detailRenderState;
+  if (detailChartMode === "intraday") {
+    if (!intradayData.length) return;
+    detailCrosshairIndex = intradayMouseToIndex(x, detailCanvas, intradayData, stock?.market || "sh");
+  } else {
+    const dailyData = history.slice(-45);
+    if (!dailyData.length) return;
+    const barWidth = rect.width / dailyData.length;
+    detailCrosshairIndex = Math.min(Math.floor(x / barWidth), dailyData.length - 1);
+  }
+  if (!detailRafPending) {
+    detailRafPending = true;
+    requestAnimationFrame(() => {
+      detailRafPending = false;
+      renderDetailChart();
+    });
+  }
 });
 
 detailCanvas.addEventListener("mouseleave", () => {
@@ -81,8 +89,8 @@ function renderDetailChart() {
   const s = detailRenderState;
   if (!s) return;
   if (detailChartMode === "intraday" && s.intradayData.length) {
-    const prevClose = s.quote?.prevClose || s.history.at(-2)?.close || s.history.at(-1)?.open || 0;
-    drawIntradayLine(detailCanvas, s.intradayData, Number(prevClose), detailCrosshairIndex);
+    const prevClose = Number(s.intradayPreClose || s.quote?.prevClose || s.history.at(-2)?.close || s.history.at(-1)?.open || 0);
+    drawIntradayLine(detailCanvas, s.intradayData, prevClose, detailCrosshairIndex, s.stock?.market || "sh");
   } else {
     drawCandles(detailCanvas, s.history, detailCrosshairIndex);
   }
@@ -97,8 +105,12 @@ async function fetchDetailIntraday() {
     market: s.stock.market,
     ndays: 1
   }).catch(() => null);
-  if (response?.ok && Array.isArray(response.data)) {
-    s.intradayData = response.data;
+  if (response?.ok && response.data) {
+    const { preClose, points } = response.data;
+    if (Array.isArray(points)) {
+      s.intradayData = points;
+      s.intradayPreClose = preClose > 0 ? preClose : 0;
+    }
   }
 }
 
@@ -225,8 +237,9 @@ watchForm.addEventListener("submit", async (event) => {
   await render();
 });
 
-watchCodeInput.addEventListener("input", handleSearchInput);
-watchNameInput.addEventListener("input", handleSearchInput);
+const debouncedSearchInput = debounce(handleSearchInput, 300);
+watchCodeInput.addEventListener("input", debouncedSearchInput);
+watchNameInput.addEventListener("input", debouncedSearchInput);
 
 const debouncedRender = debounce(render, 120);
 
@@ -344,8 +357,6 @@ function renderSelectedDetail(state, latestReport) {
     selectedScore.textContent = "-- 分";
     selectedScore.className = "score-pill";
     metricGrid.innerHTML = "";
-    matchedRules.innerHTML = emptyRuleItem("暂无加分项");
-    missedRules.innerHTML = emptyRuleItem("暂无减分项");
     detailRenderState = null;
     drawCandles(detailCanvas, []);
     return;
@@ -384,21 +395,15 @@ function renderSelectedDetail(state, latestReport) {
     ${metricCard("换手率", history.at(-1)?.turnoverRate ? `${Number(history.at(-1).turnoverRate).toFixed(2)}%` : "--")}
   `;
 
-  matchedRules.innerHTML = reportItem?.matched?.length
-    ? reportItem.matched.map((item) => ruleCard(item.ruleName, item.detail, true, item.points)).join("")
-    : emptyRuleItem("暂无命中加分项");
-
-  missedRules.innerHTML = reportItem?.missed?.length
-    ? reportItem.missed.map((item) => ruleCard(item.ruleName, item.detail, false, item.points)).join("")
-    : emptyRuleItem("暂无未命中项");
-
   const prevIntradayData = detailRenderState?.intradayData || [];
+  const prevIntradayPreClose = detailRenderState?.intradayPreClose || 0;
   const sameStock = detailRenderState?.stock?.code === selectedStock.code;
   detailRenderState = {
     stock: selectedStock,
     history,
     quote,
-    intradayData: sameStock ? prevIntradayData : []
+    intradayData: sameStock ? prevIntradayData : [],
+    intradayPreClose: sameStock ? prevIntradayPreClose : 0
   };
   detailCrosshairIndex = -1;
   renderDetailChart();
@@ -411,19 +416,6 @@ function metricCard(label, value, color = "var(--text-main)") {
       <div class="value" style="color:${escapeHtml(color)};">${escapeHtml(String(value))}</div>
     </article>
   `;
-}
-
-function ruleCard(title, detail, positive, points = 0) {
-  return `
-    <article class="rule-item">
-      <div class="title">${positive ? "+" : "-"}${Number(points || 0)} ${escapeHtml(title)}</div>
-      <div class="desc">${escapeHtml(detail || "无补充说明")}</div>
-    </article>
-  `;
-}
-
-function emptyRuleItem(text) {
-  return `<article class="rule-item"><div class="desc">${escapeHtml(text)}</div></article>`;
 }
 
 function buildHeaderStatus(state, latestReport) {
@@ -623,21 +615,30 @@ function renderEmptyWatchlist() {
   `;
 }
 
-function sortWatchlist(watchlist, state, latestReport) {  if (sortMode === "default") return watchlist;
+function sortWatchlist(watchlist, state, latestReport) {
+  if (sortMode === "default") return watchlist;
 
-  return [...watchlist].sort((a, b) => {
-    if (sortMode === "score" || sortMode === "score-asc") {
-      const aScore = latestReport?.ranking?.find((r) => r.code === a.code)?.totalScore ?? -Infinity;
-      const bScore = latestReport?.ranking?.find((r) => r.code === b.code)?.totalScore ?? -Infinity;
-      return sortMode === "score-asc" ? aScore - bScore : bScore - aScore;
+  if (sortMode === "score" || sortMode === "score-asc") {
+    const scoreMap = new Map();
+    if (latestReport?.ranking) {
+      for (const r of latestReport.ranking) {
+        scoreMap.set(r.code, r.totalScore ?? -Infinity);
+      }
     }
-    if (sortMode === "change") {
+    return [...watchlist].sort((a, b) => {
+      const aScore = scoreMap.get(a.code) ?? -Infinity;
+      const bScore = scoreMap.get(b.code) ?? -Infinity;
+      return sortMode === "score-asc" ? aScore - bScore : bScore - aScore;
+    });
+  }
+  if (sortMode === "change") {
+    return [...watchlist].sort((a, b) => {
       const aQ = state.marketCache?.quotes?.[`${a.market}${a.code}`];
       const bQ = state.marketCache?.quotes?.[`${b.market}${b.code}`];
       const aPct = aQ ? Number(aQ.changePct || 0) : -Infinity;
       const bPct = bQ ? Number(bQ.changePct || 0) : -Infinity;
       return bPct - aPct;
-    }
-    return 0;
-  });
+    });
+  }
+  return watchlist;
 }

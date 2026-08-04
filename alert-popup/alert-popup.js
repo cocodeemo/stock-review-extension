@@ -5,7 +5,7 @@ const stocksJson = params.get("stocks") || "[]";
 
 let stocks = [];
 try {
-  stocks = JSON.parse(decodeURIComponent(stocksJson));
+  stocks = JSON.parse(stocksJson);
 } catch (error) {
   console.error("Failed to parse stocks data:", error);
 }

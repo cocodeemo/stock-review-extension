@@ -72,8 +72,8 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
   const settings = {
     klineDays: Math.max(30, Math.min(500, Number(formData.get("klineDays") || 60))),
     reviewReminderTime: String(formData.get("reviewReminderTime") || "15:30"),
-    refreshIntervalMinutes: Math.max(1, Math.min(1440, Number(formData.get("refreshIntervalMinutes") || 5))),
-    opacity: Number(formData.get("opacity") || 0.94),
+    refreshIntervalMinutes: Math.max(1, Math.min(1440, Number(formData.get("refreshIntervalMinutes") || 15))),
+    opacity: Math.max(0.1, Math.min(1, Number(formData.get("opacity") || 0.94))),
     theme: String(formData.get("theme") || "scarlet"),
     reviewOnlyTradingDays: settingsForm.reviewOnlyTradingDays.checked,
     compactMode: settingsForm.compactMode.checked,
@@ -92,6 +92,12 @@ holidayForm.addEventListener("submit", async (event) => {
   if (!value) {
     return;
   }
+  // 校验日期格式：YYYY-MM-DD 或 !YYYY-MM-DD
+  const datePattern = /^!?\d{4}-\d{2}-\d{2}$/;
+  if (!datePattern.test(value)) {
+    alert("日期格式不正确，请使用 YYYY-MM-DD 或 !YYYY-MM-DD 格式");
+    return;
+  }
   const state = await getState();
   const holidayOverrides = Array.from(new Set([...(state.settings.holidayOverrides || []), value]));
   await updateSettings({ holidayOverrides });
@@ -99,10 +105,12 @@ holidayForm.addEventListener("submit", async (event) => {
   await render();
 });
 
-render();
+ensureDefaults().then(() => render()).catch((err) => {
+  console.error("[options] init failed:", err);
+  document.body.innerHTML = '<div style="padding:2rem;text-align:center;color:#666;">初始化失败，请刷新页面重试</div>';
+});
 
 async function render() {
-  await ensureDefaults();
   const state = await getState();
   applyTheme(state.settings);
 

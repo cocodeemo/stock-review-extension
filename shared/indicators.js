@@ -2,15 +2,22 @@
 import { round, toNumber } from "./utils.js";
 
 export function calcMA(candles, period) {
-  // 简单移动平均线。
-  return candles.map((_, index) => {
-    if (index + 1 < period) {
-      return null;
+  // 简单移动平均线 — 滚动求和 O(N) 优化
+  const result = new Array(candles.length).fill(null);
+  if (period <= 0 || candles.length < period) {
+    return result;
+  }
+  let sum = 0;
+  for (let i = 0; i < candles.length; i++) {
+    sum += toNumber(candles[i].close);
+    if (i >= period) {
+      sum -= toNumber(candles[i - period].close);
     }
-    const window = candles.slice(index - period + 1, index + 1);
-    const sum = window.reduce((total, candle) => total + toNumber(candle.close), 0);
-    return round(sum / period, 3);
-  });
+    if (i >= period - 1) {
+      result[i] = round(sum / period, 3);
+    }
+  }
+  return result;
 }
 
 export function calcBBI(candles) {
@@ -73,8 +80,9 @@ export function calcMACD(candles, shortPeriod = 12, longPeriod = 26, signalPerio
     return round((value - dea[index]) * 2, 4);
   });
 
-  // First valid bar: EMA(long) needs longPeriod bars, then EMA(signal) needs signalPeriod bars on top
-  const warmupLength = longPeriod + signalPeriod - 1;
+  // First valid DIF: EMA(long) needs longPeriod bars (index = longPeriod - 1)
+  // First valid DEA: EMA(signal) on valid DIF needs signalPeriod more bars (index = longPeriod + signalPeriod - 2)
+  const warmupLength = longPeriod + signalPeriod - 2;
   return candles.map((_, index) => ({
     dif: index < warmupLength ? null : dif[index],
     dea: index < warmupLength ? null : dea[index],

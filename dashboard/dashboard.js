@@ -1,9 +1,9 @@
 // Dashboard 是完整盯盘工作台，负责自选股维护、个股查看、K 线展示和报告浏览。
-import { drawCandles, drawIntradayLine } from "../shared/chart.js";
+import { drawCandles, drawIntradayLine, intradayMouseToIndex } from "../shared/chart.js";
 import { buildReportHtml, buildReportMarkdown } from "../shared/report.js";
 import { ensureDefaults, getState, saveWatchlist } from "../shared/storage.js";
 import { applyTheme, formatCurrency } from "../shared/ui.js";
-import { debounce, escapeHtml, formatDateTime, formatStockCode, inferMarket } from "../shared/utils.js";
+import { debounce, escapeHtml, formatDateTime, formatStockCode, inferMarket, toNumber } from "../shared/utils.js";
 
 const watchForm = document.getElementById("watchForm");
 const watchTable = document.getElementById("watchTable");
@@ -25,6 +25,7 @@ let intradayTimer = null;
 let isRealtimeRefreshing = false;
 let isIntradayRefreshing = false;
 let intradayBySymbol = {};
+let prevCloseBySymbol = {};
 let chartMode = "intraday";
 let crosshairIndex = -1;
 let cachedState = null;
@@ -38,13 +39,27 @@ function scoreTagClass(score, totalPossible) {
 }
 
 document.getElementById("refreshBtn").addEventListener("click", async () => {
-  await chrome.runtime.sendMessage({ type: "force-refresh" });
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "force-refresh" });
+    if (res && !res.ok) {
+      console.warn("[dashboard] force-refresh error:", res.error);
+    }
+  } catch (err) {
+    console.warn("[dashboard] force-refresh failed:", err);
+  }
   await refreshIntradayForSelection(true);
   await render();
 });
 
 document.getElementById("reviewBtn").addEventListener("click", async () => {
-  await chrome.runtime.sendMessage({ type: "run-review" });
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "run-review" });
+    if (res && !res.ok) {
+      console.warn("[dashboard] run-review error:", res.error);
+    }
+  } catch (err) {
+    console.warn("[dashboard] run-review failed:", err);
+  }
   await render();
 });
 
@@ -110,6 +125,7 @@ showDailyBtn.addEventListener("click", async () => {
   await render();
 });
 
+let chartRafPending = false;
 klineCanvas.addEventListener("mousemove", (event) => {
   if (!cachedState) return;
   const rect = klineCanvas.getBoundingClientRect();
@@ -117,15 +133,23 @@ klineCanvas.addEventListener("mousemove", (event) => {
   const selectedStock = cachedState.watchlist.find((item) => item.code === selectedCode) || cachedState.watchlist[0];
   const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
   if (!symbol) return;
-  const source = chartMode === "intraday"
-    ? (intradayBySymbol[symbol] || [])
-    : (cachedState.marketCache?.histories?.[symbol] || []).slice(-45);
-  if (!source.length) return;
-  const barWidth = chartMode === "intraday"
-    ? rect.width / Math.max(source.length - 1, 1)
-    : rect.width / source.length;
-  crosshairIndex = Math.min(Math.floor(x / barWidth), source.length - 1);
-  renderChart(cachedState);
+  if (chartMode === "intraday") {
+    const intraday = intradayBySymbol[symbol] || [];
+    if (!intraday.length) return;
+    crosshairIndex = intradayMouseToIndex(x, klineCanvas, intraday, selectedStock.market || "sh");
+  } else {
+    const history = (cachedState.marketCache?.histories?.[symbol] || []).slice(-45);
+    if (!history.length) return;
+    const barWidth = rect.width / history.length;
+    crosshairIndex = Math.min(Math.floor(x / barWidth), history.length - 1);
+  }
+  if (!chartRafPending) {
+    chartRafPending = true;
+    requestAnimationFrame(() => {
+      chartRafPending = false;
+      renderChart(cachedState);
+    });
+  }
 });
 
 klineCanvas.addEventListener("mouseleave", () => {
@@ -139,9 +163,11 @@ function renderChart(state) {
   const quote = symbol ? state.marketCache?.quotes?.[symbol] : null;
   const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
   const intraday = symbol ? intradayBySymbol[symbol] || [] : [];
+  const market = selectedStock?.market || "sh";
 
   if (chartMode === "intraday" && intraday.length) {
-    drawIntradayLine(klineCanvas, intraday, Number(quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0), crosshairIndex);
+    const prevClose = Number(prevCloseBySymbol[symbol] || quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0);
+    drawIntradayLine(klineCanvas, intraday, prevClose, crosshairIndex, market);
     showIntradayBtn.classList.add("active-tab");
     showDailyBtn.classList.remove("active-tab");
   } else {
@@ -172,6 +198,7 @@ watchTable.addEventListener("click", async (event) => {
       selectedCode = nextWatchlist[0]?.code || null;
     }
     await render();
+    chrome.runtime.sendMessage({ type: "run-review-cached" }).catch(() => {});
   }
 });
 
@@ -188,10 +215,10 @@ watchForm.addEventListener("submit", async (event) => {
     code,
     market: inferMarket(code),
     name: String(formData.get("name") || code).trim(),
-    costPrice: Number(formData.get("costPrice") || 0),
-    positionQty: Number(formData.get("positionQty") || 0),
-    takeProfitPrice: Number(formData.get("takeProfitPrice") || 0),
-    stopLossPrice: Number(formData.get("stopLossPrice") || 0),
+    costPrice: toNumber(formData.get("costPrice")),
+    positionQty: toNumber(formData.get("positionQty")),
+    takeProfitPrice: toNumber(formData.get("takeProfitPrice")),
+    stopLossPrice: toNumber(formData.get("stopLossPrice")),
     note: String(formData.get("note") || "").trim()
   };
 
@@ -288,11 +315,13 @@ window.addEventListener("beforeunload", () => {
   stopRealtimeLoop();
 });
 
-render();
+ensureDefaults().then(() => render()).catch((err) => {
+  console.error("[dashboard] init failed:", err);
+  document.body.innerHTML = '<div style="padding:2rem;text-align:center;color:#666;">初始化失败，请刷新页面重试</div>';
+});
 
 async function render() {
   // 每次重绘都按当前选中股票更新行情摘要和图表。
-  await ensureDefaults();
   const state = await getState();
   cachedState = state;
   applyTheme(state.settings);
@@ -334,6 +363,7 @@ async function render() {
   const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
   const quoteUpdatedAt = symbol ? state.marketCache?.quoteUpdatedAtBySymbol?.[symbol] : null;
   const intraday = symbol ? intradayBySymbol[symbol] || [] : [];
+  const market = selectedStock?.market || "sh";
 
   selectedTitle.textContent = selectedStock
     ? `${selectedStock.name} ${selectedStock.code}`
@@ -353,7 +383,8 @@ async function render() {
     : "";
 
   if (chartMode === "intraday" && intraday.length) {
-    drawIntradayLine(klineCanvas, intraday, Number(quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0), crosshairIndex);
+    const prevClose = Number(prevCloseBySymbol[symbol] || quote?.prevClose || history.at(-2)?.close || history.at(-1)?.open || 0);
+    drawIntradayLine(klineCanvas, intraday, prevClose, crosshairIndex, market);
   } else {
     drawCandles(klineCanvas, history, crosshairIndex);
   }
@@ -412,7 +443,7 @@ function downloadTextFile(filename, content, mimeType) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function restartRealtimeLoop() {
@@ -483,11 +514,18 @@ async function refreshIntradayForSelection(force = false) {
     ndays: 1
   }).catch(() => null);
 
-  if (response?.ok && Array.isArray(response.data)) {
-    intradayBySymbol[symbol] = response.data;
-    while (Object.keys(intradayBySymbol).length > 10) {
-      const oldestKey = Object.keys(intradayBySymbol)[0];
-      delete intradayBySymbol[oldestKey];
+  if (response?.ok && response.data) {
+    const { preClose, points } = response.data;
+    if (Array.isArray(points)) {
+      intradayBySymbol[symbol] = points;
+      if (preClose > 0) {
+        prevCloseBySymbol[symbol] = preClose;
+      }
+      while (Object.keys(intradayBySymbol).length > 10) {
+        const oldestKey = Object.keys(intradayBySymbol)[0];
+        delete intradayBySymbol[oldestKey];
+        delete prevCloseBySymbol[oldestKey];
+      }
     }
   }
 
