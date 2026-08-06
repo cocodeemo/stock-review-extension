@@ -232,5 +232,15 @@ export const THEME_PRESETS = {
     text: "#171c24",
     muted: "#6e7684",
     border: "#e2e8f0"
+  },
+  glass: {
+    id: "glass",
+    name: "毛玻璃",
+    accent: "#e0453e",
+    accentAlt: "#18a058",
+    panel: "#ffffff",
+    text: "#1a1d24",
+    muted: "#5a6373",
+    border: "rgba(255,255,255,0.18)"
   }
 };

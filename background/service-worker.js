@@ -438,8 +438,8 @@ async function runIntradayScoreAlert() {
     `alert-popup/alert-popup.html?time=${encodeURIComponent(timeLabel)}&threshold=${threshold}&stocks=${encodeURIComponent(JSON.stringify(stocks))}`
   );
 
-  // Fixed window size: content scrolls if too many stocks
-  const windowHeight = Math.min(280 + lowScoreItems.length * 45, 500);
+  // 窗口高度根据股票数量自适应：标题区 ~90px + 每条 ~42px + 底部留白 16px
+  const windowHeight = Math.min(110 + lowScoreItems.length * 42 + 16, 500);
   const screen = await chrome.system.display.getInfo();
   const display = screen[0]?.workArea ?? { top: 0, left: 0, width: 1920, height: 1080 };
   await chrome.windows.create({

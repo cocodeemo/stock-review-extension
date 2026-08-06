@@ -469,6 +469,76 @@ button:active {
   }
 }
 
+/* ── 毛玻璃主题 ── */
+[data-theme="glass"] body {
+  background:
+    radial-gradient(100% 70% at 85% 10%, rgba(224, 69, 62, 0.28) 0%, transparent 45%),
+    radial-gradient(90% 60% at 15% 90%, rgba(24, 160, 88, 0.20) 0%, transparent 40%),
+    radial-gradient(70% 50% at 50% 50%, rgba(90, 110, 230, 0.15) 0%, transparent 55%),
+    linear-gradient(145deg, #c3cee0 0%, #a8b5cc 30%, #b8a8c0 60%, #c4aca8 100%);
+  background-attachment: scroll;
+}
+
+[data-theme="glass"] .panel,
+[data-theme="glass"] .app-shell {
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+}
+
+[data-theme="glass"] .panel {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="glass"] .sidebar {
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(32px) saturate(1.7);
+  -webkit-backdrop-filter: blur(32px) saturate(1.7);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+[data-theme="glass"] .watch-row,
+[data-theme="glass"] .alert-item,
+[data-theme="glass"] .report-item {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+[data-theme="glass"] .summary-strip,
+[data-theme="glass"] .grid-panels {
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  background: rgba(255, 255, 255, 0.20);
+}
+
+/* 覆盖普通主题中 color-mix 的高不透明度白色背景 */
+[data-theme="glass"] .metric-card {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+[data-theme="glass"] .chart-card,
+[data-theme="glass"] .modal-box {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+}
+
+[data-theme="glass"] .ghost-btn {
+  background: rgba(255, 255, 255, 0.20);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+[data-theme="glass"] .active-tab,
+[data-theme="glass"] .ghost-btn.active-tab {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 .watch-form-extra {
   display: grid;
   gap: 10px;

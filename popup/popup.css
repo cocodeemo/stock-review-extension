@@ -109,7 +109,8 @@ body {
 }
 
 .detail-panel.visible {
-  display: block;
+  display: flex;
+  flex-direction: column;
   animation: slide-in 0.22s cubic-bezier(0.22, 0.9, 0.32, 1);
 }
 
@@ -543,6 +544,10 @@ h3 {
   border: 1px solid var(--border-color);
   background: color-mix(in srgb, var(--bg-panel) 88%, white);
   box-shadow: var(--shadow-s);
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 分段控件：轨道 + 白色滑块 */
@@ -580,7 +585,8 @@ h3 {
 
 #detailCanvas {
   width: 100%;
-  height: 200px;
+  flex: 1 1 auto;
+  min-height: 180px;
   display: block;
 }
 
@@ -1023,4 +1029,73 @@ button:focus-visible {
     animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ── 毛玻璃主题（macOS 风格） ── */
+[data-theme="glass"] body,
+[data-theme="glass"] .popup-shell {
+  background:
+    radial-gradient(90% 60% at 80% 15%, rgba(58, 130, 247, 0.20) 0%, transparent 50%),
+    radial-gradient(80% 50% at 20% 85%, rgba(60, 100, 160, 0.16) 0%, transparent 45%),
+    linear-gradient(160deg, #8fa3b8 0%, #7d92aa 30%, #8295ad 60%, #8a9bb0 100%);
+}
+
+/* 统一毛玻璃：偏白微透 + 大模糊 + 细高光边 */
+[data-theme="glass"] .panel,
+[data-theme="glass"] .topbar,
+[data-theme="glass"] .stock-card,
+[data-theme="glass"] .metric-card,
+[data-theme="glass"] .chart-card,
+[data-theme="glass"] .score-pill,
+[data-theme="glass"] .modal-card,
+[data-theme="glass"] .ghost-btn,
+[data-theme="glass"] .icon-btn,
+[data-theme="glass"] .active-tab-mini,
+[data-theme="glass"] .search-item,
+[data-theme="glass"] .detail-panel {
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  background: rgba(255, 255, 255, 0.48);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.7) inset, 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="glass"] .stock-card {
+  background: rgba(255, 255, 255, 0.40);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.6) inset, 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="glass"] .stock-card.active {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.8) inset, 0 2px 8px rgba(0, 0, 0, 0.10);
+}
+
+[data-theme="glass"] .detail-panel {
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(50px) saturate(1.8);
+  -webkit-backdrop-filter: blur(50px) saturate(1.8);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.8) inset, 0 8px 32px rgba(0, 0, 0, 0.10);
+}
+
+[data-theme="glass"] .chart-card {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+[data-theme="glass"] .metric-card {
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.5) inset;
+}
+
+[data-theme="glass"] .active-tab-mini {
+  background: rgba(255, 255, 255, 0.60);
+}
+
+[data-theme="glass"] .search-item:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+[data-theme="glass"] .detail-backdrop {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }

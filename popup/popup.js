@@ -45,6 +45,9 @@ detailIntradayBtn.addEventListener("click", async () => {
   detailChartMode = "intraday";
   detailIntradayBtn.classList.add("active-tab-mini");
   detailDailyBtn.classList.remove("active-tab-mini");
+  // 先用缓存数据立即渲染，避免 UI 空白
+  renderDetailChart();
+  // 异步拉取最新分时数据，完成后刷新
   await fetchDetailIntraday();
   renderDetailChart();
 });
@@ -53,7 +56,8 @@ detailDailyBtn.addEventListener("click", () => {
   detailChartMode = "daily";
   detailDailyBtn.classList.add("active-tab-mini");
   detailIntradayBtn.classList.remove("active-tab-mini");
-  renderDetailChart();
+  // 用 rAF 确保布局更新后再绘制
+  requestAnimationFrame(() => renderDetailChart());
 });
 
 let detailRafPending = false;
@@ -158,17 +162,23 @@ document.addEventListener("keydown", (event) => {
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   const btn = document.getElementById("refreshBtn");
   btn.classList.add("spinning");
-  // force-refresh 已包含行情拉取，run-review 直接复用缓存，避免重复请求。
-  const refreshRes = await chrome.runtime.sendMessage({ type: "force-refresh" });
-  if (!refreshRes?.ok) {
-    console.warn("[popup] force-refresh failed:", refreshRes?.error);
+  // 用标志位抑制 storage.onChanged 触发的重复渲染，避免闪烁
+  suppressStorageRender = true;
+  try {
+    const refreshRes = await chrome.runtime.sendMessage({ type: "force-refresh" });
+    if (!refreshRes?.ok) {
+      console.warn("[popup] force-refresh failed:", refreshRes?.error);
+    }
+    const reviewRes = await chrome.runtime.sendMessage({ type: "run-review-cached" });
+    if (!reviewRes?.ok) {
+      console.warn("[popup] run-review-cached failed:", reviewRes?.error);
+    }
+    await render();
+  } finally {
+    btn.classList.remove("spinning");
+    // 延迟解除抑制，让防抖渲染跳过最后一次 storage 事件
+    setTimeout(() => { suppressStorageRender = false; }, 300);
   }
-  const reviewRes = await chrome.runtime.sendMessage({ type: "run-review-cached" });
-  if (!reviewRes?.ok) {
-    console.warn("[popup] run-review-cached failed:", reviewRes?.error);
-  }
-  await render();
-  btn.classList.remove("spinning");
 });
 
 document.getElementById("openDashboardBtn").addEventListener("click", async () => {
@@ -194,10 +204,11 @@ document.getElementById("closeDetailBtn").addEventListener("click", () => {
   render();
 });
 
-detailPanel.addEventListener("click", (event) => {
+detailPanel.addEventListener("click", async (event) => {
   if (event.target === detailPanel) {
     selectedCode = null;
     hideDetailPanel();
+    await render();
   }
 });
 
@@ -242,8 +253,10 @@ watchCodeInput.addEventListener("input", debouncedSearchInput);
 watchNameInput.addEventListener("input", debouncedSearchInput);
 
 const debouncedRender = debounce(render, 120);
+let suppressStorageRender = false;
 
 chrome.storage.onChanged.addListener(() => {
+  if (suppressStorageRender) return;
   debouncedRender();
 });
 

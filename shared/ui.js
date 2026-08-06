@@ -11,6 +11,14 @@ export function applyTheme(settings) {
   root.style.setProperty("--accent-down", theme.accentAlt);
   root.style.setProperty("--border-color", theme.border);
   root.style.setProperty("--panel-opacity", settings.opacity ?? 0.94);
+  // 毛玻璃主题：设置标记 + 降低面板不透明度以透出背景
+  if (settings.theme === "glass") {
+    root.style.setProperty("--panel-opacity", Math.min(settings.opacity ?? 0.6, 0.6));
+    root.style.setProperty("--bg-panel", "rgba(255, 255, 255, 0.48)");
+    root.setAttribute("data-theme", "glass");
+  } else {
+    root.removeAttribute("data-theme");
+  }
 }
 
 export function renderBadge(changePct) {
