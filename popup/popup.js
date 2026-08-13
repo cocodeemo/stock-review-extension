@@ -32,8 +32,8 @@ let detailRenderState = null;
 function showDetailPanel() {
   if (detailBackdrop) detailBackdrop.hidden = false;
   detailPanel.classList.add("visible");
-  // 等布局完成后重绘，避免 clientWidth 为 0
-  requestAnimationFrame(() => renderDetailChart());
+  // 图表绘制由调用方随后触发的 render() → renderSelectedDetail 统一完成，
+  // 避免此处 rAF 用旧的 detailRenderState 抢先画一帧过期内容。
 }
 
 function hideDetailPanel() {
@@ -309,51 +309,59 @@ async function render() {
   watchCount.textContent = `${state.watchlist.length} 只`;
   headerStatus.textContent = buildHeaderStatus(state, latestReport);
 
+  // 建 ranking Map 供列表与详情复用，避免循环内线性查找
+  const rankingMap = new Map();
+  if (latestReport?.ranking?.length) {
+    for (const item of latestReport.ranking) {
+      rankingMap.set(item.code, item);
+    }
+  }
+
   const sortedWatchlist = sortWatchlist(state.watchlist, state, latestReport);
   watchlistCards.innerHTML = sortedWatchlist.length
-    ? sortedWatchlist.map((stock) => renderWatchItem(stock, state, latestReport)).join("")
+    ? sortedWatchlist.map((stock) => renderWatchItem(stock, state, rankingMap, latestReport)).join("")
     : renderEmptyWatchlist();
 
-  watchlistCards.querySelectorAll(".stock-card").forEach((card) => {
-    card.addEventListener("click", async () => {
-      if (selectedCode === card.dataset.symbol) {
-        selectedCode = null;
-        hideDetailPanel();
-        await render();
-      } else {
-        selectedCode = card.dataset.symbol;
-        showDetailPanel();
-        await render();
-      }
-    });
-  });
-
-  watchlistCards.querySelectorAll("[data-delete]").forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      const state = await getState();
-      const [market, code] = button.dataset.delete.split(":");
-      const symbol = `${market}${code}`;
-      const nextWatchlist = state.watchlist.filter((item) => !(item.market === market && item.code === code));
-      await saveWatchlist(nextWatchlist);
-      if (selectedCode === symbol) {
-        selectedCode = nextWatchlist[0] ? `${nextWatchlist[0].market}${nextWatchlist[0].code}` : null;
-        if (!selectedCode) {
-          hideDetailPanel();
-        }
-      }
-      await chrome.runtime.sendMessage({ type: "run-review-cached" });
-      await render();
-    });
-  });
-
-  renderSelectedDetail(state, latestReport);
+  renderSelectedDetail(state, rankingMap, latestReport);
 }
 
-function renderWatchItem(stock, state, latestReport) {
+// 事件委托：在容器上只绑定一次，避免每次 render 重建 innerHTML 后重复绑定
+watchlistCards.addEventListener("click", async (event) => {
+  const deleteBtn = event.target.closest("[data-delete]");
+  if (deleteBtn) {
+    event.stopPropagation();
+    const st = await getState();
+    const [market, code] = deleteBtn.dataset.delete.split(":");
+    const symbol = `${market}${code}`;
+    const nextWatchlist = st.watchlist.filter((item) => !(item.market === market && item.code === code));
+    await saveWatchlist(nextWatchlist);
+    if (selectedCode === symbol) {
+      selectedCode = nextWatchlist[0] ? `${nextWatchlist[0].market}${nextWatchlist[0].code}` : null;
+      if (!selectedCode) {
+        hideDetailPanel();
+      }
+    }
+    await chrome.runtime.sendMessage({ type: "run-review-cached" });
+    await render();
+    return;
+  }
+  const card = event.target.closest(".stock-card");
+  if (card) {
+    if (selectedCode === card.dataset.symbol) {
+      selectedCode = null;
+      hideDetailPanel();
+    } else {
+      selectedCode = card.dataset.symbol;
+      showDetailPanel();
+    }
+    await render();
+  }
+});
+
+function renderWatchItem(stock, state, rankingMap, latestReport) {
   const symbol = `${stock.market}${stock.code}`;
   const quote = state.marketCache?.quotes?.[symbol];
-  const reportItem = latestReport?.ranking?.find((item) => item.code === stock.code) || null;
+  const reportItem = rankingMap.get(stock.code) || null;
   const totalPossibleScore = latestReport?.totalPossibleScore ?? 0;
   const scoreValue = reportItem?.totalScore ?? "--";
   const scoreClass = getScoreClass(scoreValue, totalPossibleScore);
@@ -392,7 +400,7 @@ function getScoreClass(score, totalPossible) {
   return "score-low";
 }
 
-function renderSelectedDetail(state, latestReport) {
+function renderSelectedDetail(state, rankingMap, latestReport) {
   const selectedStock = state.watchlist.find((item) => `${item.market}${item.code}` === selectedCode) ?? null;
   if (!selectedStock) {
     selectedTitle.textContent = "请先添加自选股";
@@ -408,7 +416,7 @@ function renderSelectedDetail(state, latestReport) {
   const symbol = `${selectedStock.market}${selectedStock.code}`;
   const quote = state.marketCache?.quotes?.[symbol];
   const history = state.marketCache?.histories?.[symbol] || [];
-  const reportItem = latestReport?.ranking?.find((item) => item.code === selectedStock.code) || null;
+  const reportItem = rankingMap.get(selectedStock.code) || null;
   const totalPossibleScore = latestReport?.totalPossibleScore ?? 0;
   const hasQuote = Boolean(quote && quote.price > 0);
   const currentPrice = hasQuote ? Number(quote.price) : Number(history.at(-1)?.close || 0);

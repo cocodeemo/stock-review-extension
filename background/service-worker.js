@@ -138,7 +138,9 @@ async function handleRuntimeMessage(message) {
         watchlist: state.watchlist,
         existingCache: state.marketCache,
         historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
-        forceQuotes: true,
+        // 不强制刷新：让 quoteRealtimeTtlMs(2min) 生效，
+        // 避免 Dashboard 每 5 秒轮询时对全部自选股重复发请求
+        forceQuotes: false,
         forceHistories: false,
         quoteTtlMs: CACHE_POLICY.quoteRealtimeTtlMs,
         historyTtlMs: CACHE_POLICY.historyTtlMs
