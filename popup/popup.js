@@ -174,7 +174,9 @@ document.getElementById("refreshBtn").addEventListener("click", async () => {
   const btn = document.getElementById("refreshBtn");
   if (btn.classList.contains("spinning")) return; // 并发锁：刷新进行中忽略连点
   btn.classList.add("spinning");
-  // 用标志位抑制 storage.onChanged 触发的重复渲染，避免闪烁
+  // 抑制 storage.onChanged 触发的重复渲染，避免闪烁。
+  // 抑制必须覆盖整个异步流程（两个消息 + 手动 render），
+  // 因此从 render 完成后才开始计时，而非从点击时固定计时。
   suppressStorageRender = true;
   try {
     const refreshRes = await chrome.runtime.sendMessage({ type: "force-refresh" });
@@ -186,10 +188,11 @@ document.getElementById("refreshBtn").addEventListener("click", async () => {
       console.warn("[popup] run-review-cached failed:", reviewRes?.error);
     }
     await render();
+    // 消息与渲染均已落定，再静默一小段吸收延迟到达的 storage 事件
+    await new Promise((resolve) => setTimeout(resolve, 200));
   } finally {
+    suppressStorageRender = false;
     btn.classList.remove("spinning");
-    // 延迟解除抑制，让防抖渲染跳过最后一次 storage 事件
-    setTimeout(() => { suppressStorageRender = false; }, 300);
   }
 });
 
