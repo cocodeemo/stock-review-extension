@@ -8,3 +8,9 @@ Desktop.ini
 
 # Backup
 *-backup-*/
+
+# Dev / test artifacts
+test-*.html
+test-*.png
+code-review-report/
+.trae-html-share-packages/
