@@ -32,7 +32,8 @@ export const DEFAULT_SETTINGS = {
   quoteBoardSymbol: "sh000001",
   reviewMode: "after_close",
   intradayAlertEnabled: true,
-  intradayAlertScoreThreshold: 3
+  intradayAlertScoreThreshold: 3,
+  sortMode: "default"
 };
 
 export const CACHE_POLICY = {

@@ -1,6 +1,6 @@
 import { drawCandles, drawIntradayLine, intradayMouseToIndex } from "../shared/chart.js";
 import { fetchSinaSuggestions, fetchStockUniverse } from "../shared/market-api.js";
-import { ensureDefaults, getState, saveWatchlist } from "../shared/storage.js";
+import { ensureDefaults, getState, saveWatchlist, updateSettings } from "../shared/storage.js";
 import { applyTheme, renderBadge } from "../shared/ui.js";
 import { formatStockCode, inferMarket, escapeHtml, debounce } from "../shared/utils.js";
 
@@ -139,9 +139,12 @@ const SORT_MODES = ["default", "score", "score-asc", "change"];
 const SORT_LABELS = { default: "默认", score: "得分↓", "score-asc": "得分↑", change: "涨跌" };
 let sortMode = "default";
 
-document.getElementById("sortBtn").addEventListener("click", () => {
+document.getElementById("sortBtn").addEventListener("click", async () => {
   const idx = (SORT_MODES.indexOf(sortMode) + 1) % SORT_MODES.length;
   sortMode = SORT_MODES[idx];
+  // 持久化排序状态，下次打开 popup 保持
+  const state = await getState();
+  await updateSettings({ sortMode });
   const btn = document.getElementById("sortBtn");
   btn.textContent = SORT_LABELS[sortMode];
   btn.classList.toggle("active", sortMode !== "default");
@@ -280,6 +283,17 @@ render();
 async function render() {
   const state = await getState();
   applyTheme(state.settings);
+
+  // 从持久化设置恢复排序状态
+  const savedSort = state.settings?.sortMode;
+  if (SORT_MODES.includes(savedSort) && savedSort !== sortMode) {
+    sortMode = savedSort;
+    const sortBtnEl = document.getElementById("sortBtn");
+    if (sortBtnEl) {
+      sortBtnEl.textContent = SORT_LABELS[sortMode];
+      sortBtnEl.classList.toggle("active", sortMode !== "default");
+    }
+  }
 
   if (!bootstrappedRefresh) {
     bootstrappedRefresh = true;
