@@ -176,10 +176,11 @@ export async function fetchStockUniverse() {
   const hkFs = "m:116+t:3";
   const bseFs = "m:0+t:81";
 
+  // 单源失败不应拖垮整个股票池：每个市场单独容错，失败返回空数组
   const [aShareList, hkList, bseList] = await Promise.all([
-    fetchClistPage(aShareFs, fields, 1, 6000),
-    fetchClistPage(hkFs, fields, 1, 4000),
-    fetchClistPage(bseFs, fields, 1, 8000)
+    fetchClistPage(aShareFs, fields, 1, 6000).catch(() => []),
+    fetchClistPage(hkFs, fields, 1, 4000).catch(() => []),
+    fetchClistPage(bseFs, fields, 1, 8000).catch(() => [])
   ]);
 
   return [...aShareList, ...hkList, ...bseList]
@@ -431,10 +432,11 @@ export async function refreshMarketBundleWithCache({
   }
 
   // 行情刷新：拉取最新1条K线获取实时报价（不从history缓存提取，避免history 6h TTL内行情不更新）
-  // forceQuotes=true + quoteTtlMs=0 表示强制刷新全部；否则按 quoteTtlMs 过期检查
+  // forceQuotes=true 时强制刷新全部（等价于 quoteTtlMs=0）；否则按 quoteTtlMs 过期检查
+  const effectiveQuoteTtl = forceQuotes ? 0 : quoteTtlMs;
   const staleQuoteSymbols = watchlist
     .map((item) => buildFullSymbol(item.code, item.market))
-    .filter((symbol) => isExpired(quoteUpdatedAtBySymbol[symbol], quoteTtlMs, now));
+    .filter((symbol) => isExpired(quoteUpdatedAtBySymbol[symbol], effectiveQuoteTtl, now));
 
   const staleQuoteSet = new Set(staleQuoteSymbols);
   const staleQuoteItems = watchlist.filter((item) =>

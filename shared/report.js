@@ -64,8 +64,8 @@ export function buildReportMarkdown(report) {
     lines.push(``);
     lines.push(`### ${item.rank}. ${escapeMarkdown(item.name)} (${escapeMarkdown(item.code)})`);
     lines.push(`- 得分：${item.totalScore}/${report.totalPossibleScore}`);
-    lines.push(`- 现价：${round(item.currentPrice, 2)}`);
-    lines.push(`- 涨跌幅：${round(item.currentChangePct, 2)}%`);
+    lines.push(`- 现价：${item.currentPrice > 0 ? round(item.currentPrice, 2) : "--"}`);
+    lines.push(`- 涨跌幅：${item.currentPrice > 0 ? `${round(item.currentChangePct, 2)}%` : "--"}`);
     lines.push(`- MA5：${item.ma5 != null ? round(item.ma5, 2) : "--"}`);
     lines.push(`- BBI：${item.bbi != null ? round(item.bbi, 2) : "--"}`);
     lines.push(`- 加分项：${item.matched.map((rule) => `${escapeMarkdown(rule.ruleName)}（+${rule.points}）`).join("、") || "无"}`);
@@ -124,12 +124,19 @@ function buildOverview(ranking, totalPossibleScore) {
   const topScore = ranking[0].totalScore || 0;
   const strongThreshold = totalPossibleScore > 0 ? totalPossibleScore * 0.6 : 0;
   const weakThreshold = totalPossibleScore > 0 ? totalPossibleScore * 0.3 : 0;
+  // totalPossibleScore 为 0 时（无启用评分规则）强/弱计数无意义，置 0 避免重复统计
+  const strongCount = totalPossibleScore > 0
+    ? ranking.filter((item) => Number(item.totalScore || 0) >= strongThreshold).length
+    : 0;
+  const weakCount = totalPossibleScore > 0
+    ? ranking.filter((item) => Number(item.totalScore || 0) <= weakThreshold).length
+    : 0;
 
   return {
     topScore,
     avgScore,
-    strongCount: ranking.filter((item) => item.totalScore >= strongThreshold).length,
-    weakCount: ranking.filter((item) => item.totalScore <= weakThreshold).length,
+    strongCount,
+    weakCount,
     totalPossibleScore
   };
 }

@@ -25,6 +25,8 @@ import { formatDate, isWeekend, parseTimeToDate } from "../shared/utils.js";
 
 let refreshTask = null;
 let refreshTaskOptions = null;
+// 预警通知内存级去重表（key: symbol:ruleId, value: 上次推送时间戳）
+const recentAlertNotified = new Map();
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDefaults();
@@ -335,6 +337,19 @@ async function runDailyReviewReminder(force = false) {
 }
 
 async function notifyAlert(hit) {
+  // 内存级去重兜底：即使并发任务都通过了 lastAlertState 检查，也避免在短窗口内重复推送同一条预警
+  const notifKey = `${hit.symbol}:${hit.ruleId}`;
+  const now = Date.now();
+  const last = recentAlertNotified.get(notifKey);
+  if (last && now - last < 120000) {
+    return;
+  }
+  recentAlertNotified.set(notifKey, now);
+  if (recentAlertNotified.size > 200) {
+    for (const [k, t] of recentAlertNotified) {
+      if (now - t >= 120000) recentAlertNotified.delete(k);
+    }
+  }
   // 单条预警触发后立即推送系统通知，通知内容尽量压缩到股票、规则、价格三个关键信息。
   await chrome.notifications.create(`alert-${hit.symbol}-${hit.ruleId}`, {
     type: "basic",

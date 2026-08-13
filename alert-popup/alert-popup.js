@@ -32,3 +32,6 @@ stockList.replaceChildren(
 document.getElementById("closeBtn").addEventListener("click", () => {
   window.close();
 });
+
+// 用户不处理时自动关闭，避免残留预警窗口累积
+setTimeout(() => window.close(), 5 * 60 * 1000);

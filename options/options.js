@@ -16,6 +16,8 @@ const alertRulesList = document.getElementById("alertRulesList");
 const scoreRulesList = document.getElementById("scoreRulesList");
 let editingAlertRuleId = null;
 let editingScoreRuleId = null;
+// 规则列表读改写操作的串行队列（按 mode 隔离）
+const ruleSaveQueues = { score: Promise.resolve(), alert: Promise.resolve() };
 
 holidayList.addEventListener("click", async (event) => {
   const btn = event.target.closest("[data-holiday]");
@@ -35,6 +37,19 @@ scoreRulesList.addEventListener("click", async (event) => {
 });
 
 async function handleRuleListClick(event, mode) {
+  // 串行化：同一模式的读改写操作排队执行，避免快速连点基于过期 state 相互覆盖
+  const prev = ruleSaveQueues[mode];
+  let release;
+  ruleSaveQueues[mode] = new Promise((resolve) => { release = resolve; });
+  await prev;
+  try {
+    await handleRuleListClickInner(event, mode);
+  } finally {
+    release();
+  }
+}
+
+async function handleRuleListClickInner(event, mode) {
   const st = await getState();
   const rules = mode === "alert" ? st.alertRules : st.scoreRules;
   const saveFn = mode === "alert" ? saveAlertRules : saveScoreRules;
