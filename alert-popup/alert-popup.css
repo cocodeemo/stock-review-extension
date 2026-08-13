@@ -140,6 +140,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.stock-list::-webkit-scrollbar {
+  width: 4px;
+}
+.stock-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent);
+  border-radius: 999px;
 }
 
 .stock-item {

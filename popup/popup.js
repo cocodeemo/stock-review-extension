@@ -72,8 +72,11 @@ detailCanvas.addEventListener("mousemove", (event) => {
   } else {
     const dailyData = history.slice(-45);
     if (!dailyData.length) return;
-    const barWidth = rect.width / dailyData.length;
-    detailCrosshairIndex = Math.min(Math.floor(x / barWidth), dailyData.length - 1);
+    // 与 drawCandles 布局保持一致（chart.js: marginLeft=6, marginRight=58）
+    const chartW = rect.width - 6 - 58;
+    if (chartW <= 0) return;
+    const barWidth = chartW / dailyData.length;
+    detailCrosshairIndex = Math.min(Math.max(Math.floor((x - 6) / barWidth), 0), dailyData.length - 1);
   }
   if (!detailRafPending) {
     detailRafPending = true;
@@ -97,6 +100,12 @@ function renderDetailChart() {
     drawIntradayLine(detailCanvas, s.intradayData, prevClose, detailCrosshairIndex, s.stock?.market || "sh");
   } else {
     drawCandles(detailCanvas, s.history, detailCrosshairIndex);
+    // 分时无数据时回退绘制日K，需同步把 tab 高亮切回日K
+    if (detailChartMode === "intraday") {
+      detailChartMode = "daily";
+      detailDailyBtn.classList.add("active-tab-mini");
+      detailIntradayBtn.classList.remove("active-tab-mini");
+    }
   }
 }
 
@@ -109,6 +118,8 @@ async function fetchDetailIntraday() {
     market: s.stock.market,
     ndays: 1
   }).catch(() => null);
+  // 若 await 期间用户切换了股票，丢弃过期结果，避免写入已不显示的旧状态
+  if (s !== detailRenderState) return;
   if (response?.ok && response.data) {
     const { preClose, points } = response.data;
     if (Array.isArray(points)) {
@@ -161,6 +172,7 @@ document.addEventListener("keydown", (event) => {
 
 document.getElementById("refreshBtn").addEventListener("click", async () => {
   const btn = document.getElementById("refreshBtn");
+  if (btn.classList.contains("spinning")) return; // 并发锁：刷新进行中忽略连点
   btn.classList.add("spinning");
   // 用标志位抑制 storage.onChanged 触发的重复渲染，避免闪烁
   suppressStorageRender = true;
@@ -239,7 +251,7 @@ watchForm.addEventListener("submit", async (event) => {
 
   const nextWatchlist = [nextItem, ...state.watchlist.filter((item) => !(item.code === code && item.market === market))];
   await saveWatchlist(nextWatchlist);
-  selectedCode = code;
+  selectedCode = `${market}${code}`;
   showDetailPanel();
   closeSearchModal();
 
@@ -287,12 +299,12 @@ async function render() {
 
   watchlistCards.querySelectorAll(".stock-card").forEach((card) => {
     card.addEventListener("click", async () => {
-      if (selectedCode === card.dataset.code) {
+      if (selectedCode === card.dataset.symbol) {
         selectedCode = null;
         hideDetailPanel();
         await render();
       } else {
-        selectedCode = card.dataset.code;
+        selectedCode = card.dataset.symbol;
         showDetailPanel();
         await render();
       }
@@ -304,10 +316,11 @@ async function render() {
       event.stopPropagation();
       const state = await getState();
       const [market, code] = button.dataset.delete.split(":");
+      const symbol = `${market}${code}`;
       const nextWatchlist = state.watchlist.filter((item) => !(item.market === market && item.code === code));
       await saveWatchlist(nextWatchlist);
-      if (selectedCode === code) {
-        selectedCode = nextWatchlist[0]?.code || null;
+      if (selectedCode === symbol) {
+        selectedCode = nextWatchlist[0] ? `${nextWatchlist[0].market}${nextWatchlist[0].code}` : null;
         if (!selectedCode) {
           hideDetailPanel();
         }
@@ -327,7 +340,7 @@ function renderWatchItem(stock, state, latestReport) {
   const totalPossibleScore = latestReport?.totalPossibleScore ?? 0;
   const scoreValue = reportItem?.totalScore ?? "--";
   const scoreClass = getScoreClass(scoreValue, totalPossibleScore);
-  const activeClass = selectedCode === stock.code ? "active" : "";
+  const activeClass = selectedCode === `${stock.market}${stock.code}` ? "active" : "";
   const hasQuote = Boolean(quote && quote.price > 0);
   const price = hasQuote ? Number(quote.price).toFixed(2) : "—";
   const changePct = hasQuote ? Number(quote.changePct || 0) : 0;
@@ -363,7 +376,7 @@ function getScoreClass(score, totalPossible) {
 }
 
 function renderSelectedDetail(state, latestReport) {
-  const selectedStock = state.watchlist.find((item) => item.code === selectedCode) ?? null;
+  const selectedStock = state.watchlist.find((item) => `${item.market}${item.code}` === selectedCode) ?? null;
   if (!selectedStock) {
     selectedTitle.textContent = "请先添加自选股";
     selectedMeta.textContent = "当前还没有可复盘的股票";
@@ -467,9 +480,11 @@ async function loadStockUniverse() {
   return stockUniverse;
 }
 
+let searchSeq = 0;
 async function handleSearchInput() {
   await loadStockUniverse();
   const keyword = `${watchCodeInput.value} ${watchNameInput.value}`.trim();
+  const seq = ++searchSeq;
   selectedSuggestion = null;
 
   if (!keyword) {
@@ -480,6 +495,8 @@ async function handleSearchInput() {
   const normalized = keyword.replace(/\s+/g, "").toLowerCase();
   const codeKeyword = normalized.replace(/[^0-9]/g, "");
   const remoteSuggestions = await fetchSinaSuggestions(keyword).catch(() => []);
+  // 丢弃过期请求结果，避免旧关键字覆盖新结果
+  if (seq !== searchSeq) return;
   const localSuggestions = stockUniverse
     .map((item) => ({
       ...item,
@@ -488,6 +505,7 @@ async function handleSearchInput() {
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.code.localeCompare(b.code));
 
+  if (seq !== searchSeq) return;
   const merged = mergeSuggestions(remoteSuggestions, localSuggestions).slice(0, 8);
   renderSearchResults(merged);
 }

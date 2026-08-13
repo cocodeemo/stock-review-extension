@@ -140,8 +140,11 @@ klineCanvas.addEventListener("mousemove", (event) => {
   } else {
     const history = (cachedState.marketCache?.histories?.[symbol] || []).slice(-45);
     if (!history.length) return;
-    const barWidth = rect.width / history.length;
-    crosshairIndex = Math.min(Math.floor(x / barWidth), history.length - 1);
+    // 与 drawCandles 布局保持一致（chart.js: marginLeft=6, marginRight=58）
+    const chartW = rect.width - 6 - 58;
+    if (chartW <= 0) return;
+    const barWidth = chartW / history.length;
+    crosshairIndex = Math.min(Math.max(Math.floor((x - 6) / barWidth), 0), history.length - 1);
   }
   if (!chartRafPending) {
     chartRafPending = true;

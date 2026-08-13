@@ -441,7 +441,9 @@ async function runIntradayScoreAlert() {
   // 窗口高度根据股票数量自适应：标题区 ~90px + 每条 ~42px + 底部留白 16px
   const windowHeight = Math.min(110 + lowScoreItems.length * 42 + 16, 500);
   const screen = await chrome.system.display.getInfo();
-  const display = screen[0]?.workArea ?? { top: 0, left: 0, width: 1920, height: 1080 };
+  // 优先使用主显示器（getInfo 数组顺序不保证主屏在前）
+  const primary = screen.find((d) => d.isPrimary) || screen[0];
+  const display = primary?.workArea ?? { top: 0, left: 0, width: 1920, height: 1080 };
   await chrome.windows.create({
     url,
     type: "popup",
