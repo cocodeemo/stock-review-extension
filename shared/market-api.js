@@ -132,7 +132,9 @@ export async function fetchSinaQuotes(watchlist) {
       price = toNumber(parts[3]);
       high = toNumber(parts[4]);
       low = toNumber(parts[5]);
-      volume = toNumber(parts[8]);
+      // 新浪 A 股成交量单位为“股”，换算为“手”(÷100)，与东财日K(f56,手)对齐，
+      // 保证量比/量增等规则的 volume 口径一致
+      volume = toNumber(parts[8]) / 100;
       turnover = toNumber(parts[9]);
       date = parts[30] || formatDate();
       time = parts[31] || new Date().toTimeString().slice(0, 8);
