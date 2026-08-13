@@ -1032,10 +1032,10 @@ button:focus-visible {
 }
 
 /* ── 毛玻璃主题（macOS 风格） ── */
-/* 毛玻璃的灵魂在背景：多彩光斑透过磨砂层形成色彩晕染。
-   基调深蓝，三团蓝色调光斑（亮蓝/靛/青）超慢漂移，让玻璃后的色彩"活"起来。 */
+/* 毛玻璃的灵魂在背景：鲜明彩色光斑透过磨砂层形成清晰色彩晕染。
+   明亮浅色底 + 高饱和蓝/青/紫光斑漂移，呈现 macOS 通透玻璃质感。 */
 [data-theme="glass"] body {
-  background: linear-gradient(155deg, #2e3d5c 0%, #3d5178 35%, #47598a 65%, #3a4d76 100%);
+  background: linear-gradient(155deg, #d7e2f4 0%, #bfd0ea 35%, #c3d2ec 65%, #d0d4ea 100%);
   overflow: hidden;
 }
 
@@ -1044,10 +1044,10 @@ button:focus-visible {
   position: fixed;
   inset: -25%;
   background:
-    radial-gradient(30% 34% at 76% 20%, rgba(115, 168, 255, 0.90) 0%, transparent 68%),
-    radial-gradient(26% 30% at 16% 78%, rgba(98, 140, 220, 0.68) 0%, transparent 68%),
-    radial-gradient(22% 26% at 70% 84%, rgba(70, 120, 200, 0.55) 0%, transparent 68%),
-    radial-gradient(24% 28% at 28% 16%, rgba(120, 160, 245, 0.60) 0%, transparent 68%);
+    radial-gradient(34% 36% at 76% 18%, rgba(80, 160, 255, 0.95) 0%, transparent 68%),
+    radial-gradient(28% 32% at 14% 80%, rgba(60, 130, 235, 0.80) 0%, transparent 68%),
+    radial-gradient(24% 28% at 72% 86%, rgba(90, 110, 220, 0.70) 0%, transparent 68%),
+    radial-gradient(26% 30% at 26% 14%, rgba(130, 150, 255, 0.70) 0%, transparent 68%);
   animation: glass-drift 14s ease-in-out infinite alternate;
   pointer-events: none;
   z-index: 0;
@@ -1065,7 +1065,7 @@ button:focus-visible {
   background: transparent;
 }
 
-/* 统一毛玻璃面板：中透明白 + 适度模糊 + 饱和提升 + 顶部高光边 */
+/* 统一毛玻璃面板：透明白 + 强模糊 + 饱和提升 + 顶部高光边（macOS 质感） */
 [data-theme="glass"] .panel,
 [data-theme="glass"] .topbar,
 [data-theme="glass"] .stock-card,
@@ -1078,64 +1078,64 @@ button:focus-visible {
 [data-theme="glass"] .active-tab-mini,
 [data-theme="glass"] .search-item,
 [data-theme="glass"] .detail-panel {
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
-  background: rgba(255, 255, 255, 0.58);
-  border-color: rgba(255, 255, 255, 0.45);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 4px 16px rgba(15, 25, 50, 0.14);
-}
-
-/* 卡片略透，让背景色彩微微渗入，与面板拉开层次 */
-[data-theme="glass"] .stock-card {
-  background: rgba(255, 255, 255, 0.46);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 2px 8px rgba(15, 25, 50, 0.10);
-}
-
-[data-theme="glass"] .stock-card:hover {
-  background: rgba(255, 255, 255, 0.58);
-}
-
-[data-theme="glass"] .stock-card.active {
-  background: rgba(255, 255, 255, 0.70);
-  border-color: rgba(255, 255, 255, 0.75);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    0 4px 20px rgba(15, 25, 50, 0.18);
-}
-
-[data-theme="glass"] .detail-panel {
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(36px) saturate(1.8);
-  -webkit-backdrop-filter: blur(36px) saturate(1.8);
+  backdrop-filter: blur(36px) saturate(2.0);
+  -webkit-backdrop-filter: blur(36px) saturate(2.0);
+  background: rgba(255, 255, 255, 0.30);
   border-color: rgba(255, 255, 255, 0.55);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.75),
-    0 12px 40px rgba(10, 18, 40, 0.28);
+    0 4px 16px rgba(15, 25, 50, 0.10);
+}
+
+/* 卡片更透，让背景色彩清晰渗入，与面板拉开层次 */
+[data-theme="glass"] .stock-card {
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 2px 8px rgba(15, 25, 50, 0.08);
+}
+
+[data-theme="glass"] .stock-card:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+[data-theme="glass"] .stock-card.active {
+  background: rgba(255, 255, 255, 0.44);
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 4px 20px rgba(15, 25, 50, 0.14);
+}
+
+[data-theme="glass"] .detail-panel {
+  background: rgba(255, 255, 255, 0.36);
+  backdrop-filter: blur(44px) saturate(2.0);
+  -webkit-backdrop-filter: blur(44px) saturate(2.0);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 12px 40px rgba(10, 18, 40, 0.22);
 }
 
 [data-theme="glass"] .chart-card {
-  background: rgba(255, 255, 255, 0.40);
+  background: rgba(255, 255, 255, 0.20);
 }
 
 [data-theme="glass"] .metric-card {
-  background: rgba(255, 255, 255, 0.44);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 [data-theme="glass"] .active-tab-mini {
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 [data-theme="glass"] .search-item:hover {
-  background: rgba(255, 255, 255, 0.60);
+  background: rgba(255, 255, 255, 0.34);
 }
 
 [data-theme="glass"] .detail-backdrop {
-  background: rgba(30, 42, 68, 0.28);
+  background: rgba(70, 90, 130, 0.20);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -1143,11 +1143,11 @@ button:focus-visible {
 /* 玻璃质感下文字与控件的对比度微调 */
 [data-theme="glass"] .ghost-btn:hover,
 [data-theme="glass"] .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 [data-theme="glass"] .stock-card::before {
-  background: linear-gradient(180deg, var(--accent-up), color-mix(in srgb, var(--accent-up) 55%, #ff8f8a));
+  background: linear-gradient(180deg, var(--accent-up), color-mix(in srgb, var(--accent-up) 70%, #ffffff));
 }
 
 @media (prefers-reduced-motion: reduce) {
