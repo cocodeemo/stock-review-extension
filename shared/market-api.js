@@ -120,10 +120,13 @@ export async function fetchSinaQuotes(watchlist) {
       low = toNumber(parts[6]);
       volume = toNumber(parts[7]);
       turnover = toNumber(parts[8]);
-      const datePart = parts.find((p) => /^\d{4}-\d{2}-\d{2}$/.test(p));
-      const timePart = parts.find((p) => /^\d{2}:\d{2}:\d{2}$/.test(p));
-      date = datePart || formatDate();
-      time = timePart || new Date().toTimeString().slice(0, 8);
+      // 兼容新浪港股实际返回：日期为 YYYY/MM/DD（可能连字符），时间为 HH:MM（可能带秒）
+      const datePart = parts.find((p) => /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(p));
+      const timePart = parts.find((p) => /^\d{2}:\d{2}(:\d{2})?$/.test(p));
+      date = datePart ? datePart.replace(/\//g, "-") : formatDate();
+      time = timePart
+        ? (timePart.length === 5 ? `${timePart}:00` : timePart)
+        : new Date().toTimeString().slice(0, 8);
     } else {
       // A 股格式: name,open,prevClose,price,high,low,bid1,ask1,volume,amount,...,date,time
       name = parts[0] || item.name || item.code;

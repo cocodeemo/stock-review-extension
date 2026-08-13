@@ -68,8 +68,8 @@ export function buildReportMarkdown(report) {
     lines.push(`- 涨跌幅：${item.currentPrice > 0 ? `${round(item.currentChangePct, 2)}%` : "--"}`);
     lines.push(`- MA5：${item.ma5 != null ? round(item.ma5, 2) : "--"}`);
     lines.push(`- BBI：${item.bbi != null ? round(item.bbi, 2) : "--"}`);
-    lines.push(`- 加分项：${item.matched.map((rule) => `${escapeMarkdown(rule.ruleName)}（+${rule.points}）`).join("、") || "无"}`);
-    lines.push(`- 未命中项：${item.missed.map((rule) => escapeMarkdown(rule.ruleName)).join("、") || "无"}`);
+    lines.push(`- 加分项：${(item.matched || []).map((rule) => `${escapeMarkdown(rule.ruleName)}（+${rule.points}）`).join("、") || "无"}`);
+    lines.push(`- 未命中项：${(item.missed || []).map((rule) => escapeMarkdown(rule.ruleName)).join("、") || "无"}`);
   });
 
   return lines.join("\n");
@@ -82,10 +82,10 @@ export function buildReportHtml(report) {
         <section style="border:1px solid #e5d6d1;border-radius:14px;padding:16px;margin:0 0 12px;background:#fff;">
           <h3 style="margin:0 0 10px;">${escapeHtml(item.rank)}. ${escapeHtml(item.name)} (${escapeHtml(item.code)})</h3>
           <p style="margin:4px 0;">得分：<strong>${escapeHtml(item.totalScore)}/${escapeHtml(report.totalPossibleScore)}</strong></p>
-          <p style="margin:4px 0;">现价：${escapeHtml(round(item.currentPrice, 2))} | 涨跌幅：${escapeHtml(round(item.currentChangePct, 2))}%</p>
+          <p style="margin:4px 0;">现价：${escapeHtml(item.currentPrice > 0 ? round(item.currentPrice, 2) : "--")} | 涨跌幅：${escapeHtml(item.currentPrice > 0 ? `${round(item.currentChangePct, 2)}%` : "--")}</p>
           <p style="margin:4px 0;">MA5：${escapeHtml(item.ma5 != null ? round(item.ma5, 2) : "--")} | BBI：${escapeHtml(item.bbi != null ? round(item.bbi, 2) : "--")}</p>
-          <p style="margin:4px 0;">加分项：${item.matched.map((rule) => `${escapeHtml(rule.ruleName)}(+${escapeHtml(rule.points)})`).join("、") || "无"}</p>
-          <p style="margin:4px 0;">未命中项：${item.missed.map((rule) => escapeHtml(rule.ruleName)).join("、") || "无"}</p>
+          <p style="margin:4px 0;">加分项：${(item.matched || []).map((rule) => `${escapeHtml(rule.ruleName)}(+${escapeHtml(rule.points)})`).join("、") || "无"}</p>
+          <p style="margin:4px 0;">未命中项：${(item.missed || []).map((rule) => escapeHtml(rule.ruleName)).join("、") || "无"}</p>
         </section>
       `
     )

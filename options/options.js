@@ -36,17 +36,21 @@ scoreRulesList.addEventListener("click", async (event) => {
   await handleRuleListClick(event, "score");
 });
 
-async function handleRuleListClick(event, mode) {
+async function runRuleQueue(mode, task) {
   // 串行化：同一模式的读改写操作排队执行，避免快速连点基于过期 state 相互覆盖
   const prev = ruleSaveQueues[mode];
   let release;
   ruleSaveQueues[mode] = new Promise((resolve) => { release = resolve; });
   await prev;
   try {
-    await handleRuleListClickInner(event, mode);
+    await task();
   } finally {
     release();
   }
+}
+
+async function handleRuleListClick(event, mode) {
+  await runRuleQueue(mode, () => handleRuleListClickInner(event, mode));
 }
 
 async function handleRuleListClickInner(event, mode) {
@@ -94,7 +98,7 @@ document.getElementById("saveSettingsBtn").addEventListener("click", async () =>
     compactMode: settingsForm.compactMode.checked,
     hidePriceOnBlur: settingsForm.hidePriceOnBlur.checked,
     intradayAlertEnabled: settingsForm.intradayAlertEnabled.checked,
-    intradayAlertScoreThreshold: Math.max(0, Math.min(10, Number(formData.get("intradayAlertScoreThreshold") ?? 3))),
+    intradayAlertScoreThreshold: Math.max(0, Math.min(10, Number(formData.get("intradayAlertScoreThreshold") || 3))),
     holidayOverrides: state.settings.holidayOverrides || []
   };
   await updateSettings(settings);
@@ -203,6 +207,10 @@ function buildRuleParams(formData) {
 }
 
 async function handleAddAlertRule(formData) {
+  await runRuleQueue("alert", () => handleAddAlertRuleInner(formData));
+}
+
+async function handleAddAlertRuleInner(formData) {
   const state = await getState();
   const nextRule = {
     id: editingAlertRuleId || uid("alert"),
@@ -220,6 +228,10 @@ async function handleAddAlertRule(formData) {
 }
 
 async function handleAddScoreRule(formData) {
+  await runRuleQueue("score", () => handleAddScoreRuleInner(formData));
+}
+
+async function handleAddScoreRuleInner(formData) {
   const state = await getState();
   const nextRule = {
     id: editingScoreRuleId || uid("score"),

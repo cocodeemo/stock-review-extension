@@ -34,6 +34,11 @@ export function drawCandles(canvas, candles = [], crosshairIndex = -1) {
   const priceH = Math.floor(totalChartH * 0.72);
   const volH = totalChartH - priceH;
 
+  // 极窄画布下绘图区可能为负，直接返回避免负宽绘制
+  if (chartW <= 0 || priceH <= 0 || volH < 0) {
+    return;
+  }
+
   const visible = candles.slice(-45);
 
   // Colors: match dashboard theme (red up, green down)

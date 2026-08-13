@@ -5,7 +5,8 @@ const stocksJson = params.get("stocks") || "[]";
 
 let stocks = [];
 try {
-  stocks = JSON.parse(stocksJson);
+  const parsed = JSON.parse(stocksJson);
+  if (Array.isArray(parsed)) stocks = parsed;
 } catch (error) {
   console.error("Failed to parse stocks data:", error);
 }

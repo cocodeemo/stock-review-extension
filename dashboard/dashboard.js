@@ -22,6 +22,15 @@ let selectedCode = null;
 let bootstrappedRefresh = false;
 let realtimeTimer = null;
 let intradayTimer = null;
+
+// selectedCode 存完整 symbol(market+code)，避免跨市场同代码串股
+function stockSymbol(stock) {
+  return stock ? `${stock.market}${stock.code}` : null;
+}
+function findSelectedStock(list) {
+  if (!list || !list.length) return null;
+  return list.find((item) => stockSymbol(item) === selectedCode) || list[0];
+}
 let isRealtimeRefreshing = false;
 let isIntradayRefreshing = false;
 let intradayBySymbol = {};
@@ -101,11 +110,12 @@ document.getElementById("toggleExtraBtn").addEventListener("click", () => {
 
 showIntradayBtn.addEventListener("click", async () => {
   chartMode = "intraday";
+  crosshairIndex = -1;
   showIntradayBtn.classList.add("active-tab");
   showDailyBtn.classList.remove("active-tab");
 
-  const selectedStock = cachedState?.watchlist.find((item) => item.code === selectedCode) || cachedState?.watchlist[0];
-  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  const selectedStock = findSelectedStock(cachedState?.watchlist);
+  const symbol = stockSymbol(selectedStock);
   const hasCached = symbol && intradayBySymbol[symbol]?.length > 0;
 
   if (hasCached) {
@@ -130,8 +140,8 @@ klineCanvas.addEventListener("mousemove", (event) => {
   if (!cachedState) return;
   const rect = klineCanvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
-  const selectedStock = cachedState.watchlist.find((item) => item.code === selectedCode) || cachedState.watchlist[0];
-  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  const selectedStock = findSelectedStock(cachedState.watchlist);
+  const symbol = stockSymbol(selectedStock);
   if (!symbol) return;
   if (chartMode === "intraday") {
     const intraday = intradayBySymbol[symbol] || [];
@@ -161,8 +171,8 @@ klineCanvas.addEventListener("mouseleave", () => {
 });
 
 function renderChart(state) {
-  const selectedStock = state.watchlist.find((item) => item.code === selectedCode) || state.watchlist[0];
-  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  const selectedStock = findSelectedStock(state.watchlist);
+  const symbol = stockSymbol(selectedStock);
   const quote = symbol ? state.marketCache?.quotes?.[symbol] : null;
   const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
   const intraday = symbol ? intradayBySymbol[symbol] || [] : [];
@@ -183,7 +193,8 @@ function renderChart(state) {
 watchTable.addEventListener("click", async (event) => {
   const selectBtn = event.target.closest(".select-btn");
   if (selectBtn) {
-    selectedCode = selectBtn.dataset.code;
+    selectedCode = `${selectBtn.dataset.market}${selectBtn.dataset.code}`;
+    crosshairIndex = -1;
     await refreshIntradayForSelection(true);
     await render();
     return;
@@ -197,8 +208,8 @@ watchTable.addEventListener("click", async (event) => {
     if (!confirm(`确认删除「${target?.name || deleteCode}」？`)) return;
     const nextWatchlist = st.watchlist.filter((item) => !(item.code === deleteCode && item.market === deleteMarket));
     await saveWatchlist(nextWatchlist);
-    if (selectedCode === deleteCode) {
-      selectedCode = nextWatchlist[0]?.code || null;
+    if (selectedCode === `${deleteMarket}${deleteCode}`) {
+      selectedCode = nextWatchlist[0] ? `${nextWatchlist[0].market}${nextWatchlist[0].code}` : null;
     }
     await render();
     chrome.runtime.sendMessage({ type: "run-review-cached" }).catch(() => {});
@@ -229,7 +240,7 @@ watchForm.addEventListener("submit", async (event) => {
   nextWatchlist.unshift(item);
   await saveWatchlist(nextWatchlist);
   watchForm.reset();
-  selectedCode = code;
+  selectedCode = `${item.market}${item.code}`;
   await chrome.runtime.sendMessage({ type: "force-refresh" });
   await render();
 });
@@ -337,7 +348,7 @@ async function render() {
   }
 
   if (!selectedCode && state.watchlist[0]) {
-    selectedCode = state.watchlist[0].code;
+    selectedCode = stockSymbol(state.watchlist[0]);
   }
 
   watchTable.innerHTML = state.watchlist
@@ -360,8 +371,8 @@ async function render() {
     })
     .join("");
 
-  const selectedStock = state.watchlist.find((item) => item.code === selectedCode) || state.watchlist[0];
-  const symbol = selectedStock ? `${selectedStock.market}${selectedStock.code}` : null;
+  const selectedStock = findSelectedStock(state.watchlist);
+  const symbol = stockSymbol(selectedStock);
   const quote = symbol ? state.marketCache?.quotes?.[symbol] : null;
   const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
   const quoteUpdatedAt = symbol ? state.marketCache?.quoteUpdatedAtBySymbol?.[symbol] : null;
@@ -492,11 +503,11 @@ function stopRealtimeLoop() {
 async function refreshIntradayForSelection(force = false) {
   const state = await getState();
   cachedState = state;
-  const selectedStock = state.watchlist.find((item) => item.code === selectedCode) || state.watchlist[0];
+  const selectedStock = findSelectedStock(state.watchlist);
   if (!selectedStock) {
     return;
   }
-  const symbol = `${selectedStock.market}${selectedStock.code}`;
+  const symbol = stockSymbol(selectedStock);
 
   // 如果不是强制刷新且有缓存数据，直接使用缓存
   if (!force && intradayBySymbol[symbol]?.length > 0) {
