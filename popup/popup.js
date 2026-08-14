@@ -28,6 +28,7 @@ let detailChartMode = "daily";
 let detailIntradayData = [];
 let detailCrosshairIndex = -1;
 let detailRenderState = null;
+let detailDailyFetching = false;
 
 function showDetailPanel() {
   if (detailBackdrop) detailBackdrop.hidden = false;
@@ -58,6 +59,8 @@ detailDailyBtn.addEventListener("click", () => {
   detailIntradayBtn.classList.remove("active-tab-mini");
   // 用 rAF 确保布局更新后再绘制
   requestAnimationFrame(() => renderDetailChart());
+  // 异步拉取最新日K数据，完成后刷新（避免 6h TTL 缓存中的盘中快照缺失下影线）
+  fetchDetailDaily();
 });
 
 let detailRafPending = false;
@@ -105,6 +108,8 @@ function renderDetailChart() {
       detailChartMode = "daily";
       detailDailyBtn.classList.add("active-tab-mini");
       detailIntradayBtn.classList.remove("active-tab-mini");
+      // 回退到日K时也异步刷新最新数据
+      fetchDetailDaily();
     }
   }
 }
@@ -126,6 +131,32 @@ async function fetchDetailIntraday() {
       s.intradayData = points;
       s.intradayPreClose = preClose > 0 ? preClose : 0;
     }
+  }
+}
+
+async function fetchDetailDaily() {
+  if (detailDailyFetching) return;
+  detailDailyFetching = true;
+  try {
+    const s = detailRenderState;
+    if (!s?.stock) return;
+    const response = await chrome.runtime.sendMessage({
+      type: "get-stock-history",
+      code: s.stock.code,
+      market: s.stock.market,
+      limit: 120
+    }).catch(() => null);
+    // 若 await 期间用户切换了股票，丢弃过期结果，避免写入已不显示的旧状态
+    if (s !== detailRenderState) return;
+    if (response?.ok && Array.isArray(response.data) && response.data.length) {
+      s.history = response.data;
+      // 仅当前仍处于日K模式时重绘，避免覆盖分时图
+      if (detailChartMode === "daily") {
+        renderDetailChart();
+      }
+    }
+  } finally {
+    detailDailyFetching = false;
   }
 }
 
@@ -458,6 +489,11 @@ function renderSelectedDetail(state, rankingMap, latestReport) {
   };
   detailCrosshairIndex = -1;
   renderDetailChart();
+  // 打开详情/切换股票且处于日K模式时，异步拉取最新日K（避免收盘后
+  // 6h TTL 缓存中的盘中快照缺失下影线等形态），in-flight 去重防重复请求
+  if (detailChartMode === "daily" && !sameStock) {
+    fetchDetailDaily();
+  }
 }
 
 function metricCard(label, value, color = "var(--text-main)") {
