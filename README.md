@@ -85,6 +85,10 @@
 
 ## 版本记录
 
+### v1.2.8
+- 修复：扩展 Service Worker 中东财 `get-stock-history` 持续 `TypeError: Failed to fetch`（node/浏览器实测东财可达但扩展环境不可达），为日K新增腾讯 `web.ifzq.gtimg.cn` 兜底数据源，东财失败时自动切换（A股/港股均支持，成交量自动÷100对齐“手”单位）
+- 增强：东财日K失败时输出底层网络错误码（`error.cause`），便于在 SW console 定位失败原因
+
 ### v1.2.7
 - 修复：详情页拉取最新日K偶发 `Failed to fetch`，`fetchEastMoneyHistory` 补充东财 `ut` 参数并增加一次失败重试，降低东财限流/网络抖动导致的瞬时失败
 

@@ -250,41 +250,8 @@ export async function fetchSinaSuggestions(keyword) {
   }
 }
 
-export async function fetchEastMoneyHistory(code, market, limit = 120) {
-  const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 120)));
-  // 使用东财日 K 数据补齐均线、BBI、MACD 所需的历史数据。
-  const secid = buildEastMoneySecid(code, market);
-  const url =
-    "https://push2his.eastmoney.com/api/qt/stock/kline/get" +
-    `?secid=${secid}` +
-    "&fields1=f1,f2,f3,f4,f5,f6" +
-    "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61" +
-    "&klt=101&fqt=1" +
-    `&lmt=${safeLimit}&end=20500101` +
-    "&ut=fa5fd1943c7b386f172d6893dbfba10b";
-
-  // 瞬时网络抖动/限流时重试一次，避免偶发 Failed to fetch 导致详情日K缺失
-  let response = null;
-  let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      response = await fetch(url);
-      if (response.ok) break;
-      lastError = new Error(`EastMoney kline HTTP ${response.status} for ${secid}`);
-    } catch (error) {
-      lastError = error;
-    }
-    if (attempt === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
-  }
-  if (!response || !response.ok) {
-    throw lastError || new Error(`EastMoney kline failed for ${secid}`);
-  }
-  const payload = await response.json();
-  const klines = payload?.data?.klines || [];
-
-  const candles = klines.map((row) => {
+function parseEastMoneyKlines(klines) {
+  return klines.map((row) => {
     const [
       date,
       open,
@@ -313,8 +280,113 @@ export async function fetchEastMoneyHistory(code, market, limit = 120) {
       turnoverRate: toNumber(turnoverRate)
     };
   });
+}
 
-  return attachIndicators(candles);
+// 腾讯日K兜底源：web.ifzq.gtimg.cn，A股/港股均支持。
+// 返回 [date, open, close, high, low, volume]，成交量单位为“股”，统一换算为“手”(÷100)与东财口径对齐。
+// A 股前复权数据在 qfqday 字段，港股在 day 字段。
+async function fetchTencentHistory(code, market, limit = 120) {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 120)));
+  const normalizedMarket = market || inferMarket(code);
+  const normalizedCode = formatStockCode(code);
+  const prefix = normalizedMarket === "hk" ? "hk" : normalizedMarket; // sh / sz / bj
+  const symbol = `${prefix}${normalizedCode}`;
+  const url =
+    "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get" +
+    `?param=${symbol},day,,,${safeLimit},qfq`;
+
+  let lastErr = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        lastErr = new Error(`Tencent kline HTTP ${response.status} for ${symbol}`);
+      } else {
+        const payload = await response.json();
+        const node = payload?.data?.[symbol];
+        const rows = node?.qfqday || node?.day || [];
+        return rows
+          .filter((r) => Array.isArray(r) && r[0])
+          .map((r) => ({
+            date: r[0],
+            open: toNumber(r[1]),
+            close: toNumber(r[2]),
+            high: toNumber(r[3]),
+            low: toNumber(r[4]),
+            volume: toNumber(r[5]) / 100,
+            turnover: 0,
+            amplitude: 0,
+            changePct: 0,
+            change: 0,
+            turnoverRate: 0
+          }));
+      }
+    } catch (error) {
+      lastErr = error;
+    }
+    if (attempt === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  throw lastErr || new Error(`Tencent kline failed for ${symbol}`);
+}
+
+export async function fetchEastMoneyHistory(code, market, limit = 120) {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 120)));
+  // 使用东财日 K 数据补齐均线、BBI、MACD 所需的历史数据。
+  const secid = buildEastMoneySecid(code, market);
+  const url =
+    "https://push2his.eastmoney.com/api/qt/stock/kline/get" +
+    `?secid=${secid}` +
+    "&fields1=f1,f2,f3,f4,f5,f6" +
+    "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61" +
+    "&klt=101&fqt=1" +
+    `&lmt=${safeLimit}&end=20500101` +
+    "&ut=fa5fd1943c7b386f172d6893dbfba10b";
+
+  // 瞬时网络抖动/限流时重试一次，避免偶发 Failed to fetch 导致详情日K缺失
+  let response = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await fetch(url);
+      if (response.ok) break;
+      lastError = new Error(`EastMoney kline HTTP ${response.status} for ${secid}`);
+    } catch (error) {
+      lastError = error;
+      // 记录底层网络错误码，便于在 SW console 里定位失败原因
+      console.warn(
+        `[market-api] EastMoney kline fetch attempt ${attempt + 1}/2 failed for ${secid}:`,
+        error?.cause?.code || error?.cause?.message || error.message
+      );
+    }
+    if (attempt === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  if (response && response.ok) {
+    const payload = await response.json();
+    const klines = payload?.data?.klines || [];
+    return attachIndicators(parseEastMoneyKlines(klines));
+  }
+
+  // 东财不可达时回退到腾讯日K，避免详情页/复盘链路因单一数据源故障而中断
+  try {
+    const tencentCandles = await fetchTencentHistory(code, market, safeLimit);
+    if (tencentCandles.length) {
+      console.warn(
+        `[market-api] EastMoney kline unavailable (${secid}), Tencent fallback ${tencentCandles.length} bars`
+      );
+      return attachIndicators(tencentCandles);
+    }
+    throw new Error(`Tencent fallback empty for ${secid}`);
+  } catch (fallbackErr) {
+    console.error(
+      `[market-api] Tencent fallback failed for ${secid}:`,
+      fallbackErr?.cause?.code || fallbackErr?.cause?.message || fallbackErr.message
+    );
+    throw lastError || new Error(`EastMoney kline failed for ${secid}`);
+  }
 }
 
 export async function fetchEastMoneyIntradayTrends(code, market, ndays = 1) {
