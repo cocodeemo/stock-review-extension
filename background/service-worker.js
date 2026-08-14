@@ -82,6 +82,10 @@ async function handleAlarm(alarm) {
     } else if (alarm.name === ALARM_NAMES.DAILY_REVIEW) {
       await runDailyReviewReminder();
     } else if (alarm.name === ALARM_NAMES.POLLING) {
+      // 非交易时段跳过轮询，避免夜间/周末每 15 分钟无效唤醒与请求；
+      // 用户打开 popup/dashboard 时会主动触发刷新，不依赖后台轮询保活
+      const pollingState = await getState();
+      if (!isTradingSession(pollingState)) return;
       await refreshAndEvaluate("polling", { forceQuotes: true, sourceLabel: "polling" });
     } else if (alarm.name === ALARM_NAMES.INTRADAY_ALERT_1450) {
       await runIntradayScoreAlert();
@@ -416,6 +420,20 @@ async function detectTradingDay(state) {
     console.warn("Trading day detection failed, fallback to weekday heuristic", error);
     return true;
   }
+}
+
+function isTradingSession(state) {
+  // 本地零网络判断当前是否处于可交易时段，用于轮询守卫：
+  // 1. holidayOverrides 支持手动覆盖（!date 强制非交易日，date 强制补班交易日）
+  // 2. 周末默认跳过
+  // 3. 覆盖 A股(9:30-15:00) 与 港股(9:30-16:00) 交易时段，留少量余量
+  const now = new Date();
+  const today = formatDate(now);
+  const overrides = state.settings.holidayOverrides || [];
+  if (overrides.includes(`!${today}`)) return false;
+  if (!overrides.includes(today) && isWeekend(now)) return false;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return minutes >= 9 * 60 + 15 && minutes <= 16 * 60 + 30;
 }
 
 function getNextDailyTime(date) {
