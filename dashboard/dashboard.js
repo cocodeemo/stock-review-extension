@@ -35,6 +35,7 @@ let isRealtimeRefreshing = false;
 let isIntradayRefreshing = false;
 let intradayBySymbol = {};
 let prevCloseBySymbol = {};
+let dailyBySymbol = {};
 let chartMode = "intraday";
 let crosshairIndex = -1;
 let cachedState = null;
@@ -132,6 +133,8 @@ showDailyBtn.addEventListener("click", async () => {
   showDailyBtn.classList.add("active-tab");
   showIntradayBtn.classList.remove("active-tab");
   crosshairIndex = -1;
+  // 异步拉取最新日K并重绘，避免 6h TTL 缓存中的盘中快照缺失下影线等形态
+  await refreshDailyForSelection(true);
   await render();
 });
 
@@ -148,7 +151,7 @@ klineCanvas.addEventListener("mousemove", (event) => {
     if (!intraday.length) return;
     crosshairIndex = intradayMouseToIndex(x, klineCanvas, intraday, selectedStock.market || "sh");
   } else {
-    const history = (cachedState.marketCache?.histories?.[symbol] || []).slice(-45);
+    const history = (dailyBySymbol[symbol] || cachedState.marketCache?.histories?.[symbol] || []).slice(-45);
     if (!history.length) return;
     // 与 drawCandles 布局保持一致（chart.js: marginLeft=6, marginRight=58）
     const chartW = rect.width - 6 - 58;
@@ -174,7 +177,9 @@ function renderChart(state) {
   const selectedStock = findSelectedStock(state.watchlist);
   const symbol = stockSymbol(selectedStock);
   const quote = symbol ? state.marketCache?.quotes?.[symbol] : null;
-  const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
+  // 日K优先使用异步拉取的最新数据（dailyBySymbol），避免 6h TTL 缓存
+  // 中的盘中快照在收盘后缺失下影线等形态；无刷新数据时回退到缓存
+  const history = symbol ? (dailyBySymbol[symbol] || state.marketCache?.histories?.[symbol] || []) : [];
   const intraday = symbol ? intradayBySymbol[symbol] || [] : [];
   const market = selectedStock?.market || "sh";
 
@@ -196,6 +201,7 @@ watchTable.addEventListener("click", async (event) => {
     selectedCode = `${selectBtn.dataset.market}${selectBtn.dataset.code}`;
     crosshairIndex = -1;
     await refreshIntradayForSelection(true);
+    await refreshDailyForSelection();
     await render();
     return;
   }
@@ -345,6 +351,7 @@ async function render() {
     chrome.runtime.sendMessage({ type: "soft-refresh" }).catch((err) => console.warn("[dashboard] soft-refresh failed:", err));
     restartRealtimeLoop();
     refreshIntradayForSelection(true).catch((err) => console.warn("[dashboard] initial intraday fetch failed:", err));
+    refreshDailyForSelection(true).catch((err) => console.warn("[dashboard] initial daily fetch failed:", err));
   }
 
   if (!selectedCode && state.watchlist[0]) {
@@ -374,7 +381,7 @@ async function render() {
   const selectedStock = findSelectedStock(state.watchlist);
   const symbol = stockSymbol(selectedStock);
   const quote = symbol ? state.marketCache?.quotes?.[symbol] : null;
-  const history = symbol ? state.marketCache?.histories?.[symbol] || [] : [];
+  const history = symbol ? (dailyBySymbol[symbol] || state.marketCache?.histories?.[symbol] || []) : [];
   const quoteUpdatedAt = symbol ? state.marketCache?.quoteUpdatedAtBySymbol?.[symbol] : null;
   const intraday = symbol ? intradayBySymbol[symbol] || [] : [];
   const market = selectedStock?.market || "sh";
@@ -545,5 +552,40 @@ async function refreshIntradayForSelection(force = false) {
 
   if (chartMode === "intraday") {
     await render();
+  }
+}
+
+async function refreshDailyForSelection(force = false) {
+  const state = await getState();
+  cachedState = state;
+  const selectedStock = findSelectedStock(state.watchlist);
+  if (!selectedStock) return;
+  const symbol = stockSymbol(selectedStock);
+
+  // 若非强制刷新且已有最新日K缓存，直接使用
+  if (!force && dailyBySymbol[symbol]?.length > 0) {
+    if (chartMode === "daily") {
+      renderChart(cachedState);
+    }
+    return;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: "get-stock-history",
+    code: selectedStock.code,
+    market: selectedStock.market,
+    limit: 120
+  }).catch(() => null);
+
+  if (response?.ok && Array.isArray(response.data) && response.data.length) {
+    dailyBySymbol[symbol] = response.data;
+    while (Object.keys(dailyBySymbol).length > 10) {
+      const oldestKey = Object.keys(dailyBySymbol)[0];
+      delete dailyBySymbol[oldestKey];
+    }
+  }
+
+  if (chartMode === "daily") {
+    renderChart(cachedState);
   }
 }

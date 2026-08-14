@@ -140,16 +140,20 @@ async function fetchDetailDaily() {
   try {
     const s = detailRenderState;
     if (!s?.stock) return;
+    const { code, market } = s.stock;
     const response = await chrome.runtime.sendMessage({
       type: "get-stock-history",
-      code: s.stock.code,
-      market: s.stock.market,
+      code,
+      market,
       limit: 120
     }).catch(() => null);
-    // 若 await 期间用户切换了股票，丢弃过期结果，避免写入已不显示的旧状态
-    if (s !== detailRenderState) return;
+    // 用股票代码而非对象引用判断：await 期间 detailRenderState 可能因
+    // storage 触发 render 被重建，但只要仍是同一只股票，就写入最新数据
+    const cur = detailRenderState;
+    if (!cur || cur.stock?.code !== code) return;
     if (response?.ok && Array.isArray(response.data) && response.data.length) {
-      s.history = response.data;
+      cur.history = response.data;
+      cur.historyRefreshedAt = Date.now();
       // 仅当前仍处于日K模式时重绘，避免覆盖分时图
       if (detailChartMode === "daily") {
         renderDetailChart();
@@ -446,7 +450,14 @@ function renderSelectedDetail(state, rankingMap, latestReport) {
 
   const symbol = `${selectedStock.market}${selectedStock.code}`;
   const quote = state.marketCache?.quotes?.[symbol];
-  const history = state.marketCache?.histories?.[symbol] || [];
+  const prevDetail = detailRenderState;
+  const sameStock = prevDetail?.stock?.code === selectedStock.code;
+  // 若该股票已异步刷新过最新日K（含最新交易日），优先保留，
+  // 避免被 6h TTL 缓存中的盘中快照覆盖导致下影线等形态缺失
+  const history = pickLatestHistory(
+    sameStock && prevDetail.history?.length ? prevDetail.history : [],
+    state.marketCache?.histories?.[symbol] || []
+  );
   const reportItem = rankingMap.get(selectedStock.code) || null;
   const totalPossibleScore = latestReport?.totalPossibleScore ?? 0;
   const hasQuote = Boolean(quote && quote.price > 0);
@@ -477,9 +488,8 @@ function renderSelectedDetail(state, rankingMap, latestReport) {
     ${metricCard("换手率", history.at(-1)?.turnoverRate ? `${Number(history.at(-1).turnoverRate).toFixed(2)}%` : "--")}
   `;
 
-  const prevIntradayData = detailRenderState?.intradayData || [];
-  const prevIntradayPreClose = detailRenderState?.intradayPreClose || 0;
-  const sameStock = detailRenderState?.stock?.code === selectedStock.code;
+  const prevIntradayData = prevDetail?.intradayData || [];
+  const prevIntradayPreClose = prevDetail?.intradayPreClose || 0;
   detailRenderState = {
     stock: selectedStock,
     history,
@@ -494,6 +504,16 @@ function renderSelectedDetail(state, rankingMap, latestReport) {
   if (detailChartMode === "daily" && !sameStock) {
     fetchDetailDaily();
   }
+}
+
+// 比较两段日K，返回包含最新交易日（最后一根日期更大）的那段，用于在
+// 6h TTL 缓存与异步拉取的最新数据之间选择较新者，避免旧快照覆盖新形态
+function pickLatestHistory(a, b) {
+  if (!Array.isArray(a) || !a.length) return Array.isArray(b) ? b : [];
+  if (!Array.isArray(b) || !b.length) return a;
+  const aDate = String(a.at(-1)?.date || "");
+  const bDate = String(b.at(-1)?.date || "");
+  return aDate >= bDate ? a : b;
 }
 
 function metricCard(label, value, color = "var(--text-main)") {
