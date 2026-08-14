@@ -1048,15 +1048,10 @@ button:focus-visible {
     radial-gradient(28% 32% at 14% 80%, rgba(60, 130, 235, 0.80) 0%, transparent 68%),
     radial-gradient(24% 28% at 72% 86%, rgba(90, 110, 220, 0.70) 0%, transparent 68%),
     radial-gradient(26% 30% at 26% 14%, rgba(130, 150, 255, 0.70) 0%, transparent 68%);
-  animation: glass-drift 14s ease-in-out infinite alternate;
+  /* 静态渐变光斑：移除无限 transform 动画，
+     避免每帧驱动所有 backdrop-filter 层重新采样模糊 */
   pointer-events: none;
   z-index: 0;
-}
-
-@keyframes glass-drift {
-  0%   { transform: translate(0, 0) scale(1); }
-  50%  { transform: translate(7%, -8%) scale(1.12); }
-  100% { transform: translate(-7%, 7%) scale(0.94); }
 }
 
 [data-theme="glass"] .popup-shell {
@@ -1065,21 +1060,14 @@ button:focus-visible {
   background: transparent;
 }
 
-/* 统一毛玻璃面板：透明白 + 强模糊 + 饱和提升 + 顶部高光边（macOS 质感） */
+/* 毛玻璃面板：只在外层容器做模糊（内层元素不再嵌套 backdrop-filter，
+   避免每层对已模糊结果再次采样、成倍增加开销） */
 [data-theme="glass"] .panel,
 [data-theme="glass"] .topbar,
-[data-theme="glass"] .stock-card,
-[data-theme="glass"] .metric-card,
-[data-theme="glass"] .chart-card,
-[data-theme="glass"] .score-pill,
 [data-theme="glass"] .modal-card,
-[data-theme="glass"] .ghost-btn,
-[data-theme="glass"] .icon-btn,
-[data-theme="glass"] .active-tab-mini,
-[data-theme="glass"] .search-item,
 [data-theme="glass"] .detail-panel {
-  backdrop-filter: blur(36px) saturate(2.0);
-  -webkit-backdrop-filter: blur(36px) saturate(2.0);
+  backdrop-filter: blur(24px) saturate(2.0);
+  -webkit-backdrop-filter: blur(24px) saturate(2.0);
   background: rgba(255, 255, 255, 0.30);
   border-color: rgba(255, 255, 255, 0.55);
   box-shadow:
@@ -1087,16 +1075,16 @@ button:focus-visible {
     0 4px 16px rgba(15, 25, 50, 0.10);
 }
 
-/* 卡片更透，让背景色彩清晰渗入，与面板拉开层次 */
+/* 内层卡片不再模糊，改为更高不透明白底，保证文字对比度 */
 [data-theme="glass"] .stock-card {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.38);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.6),
     0 2px 8px rgba(15, 25, 50, 0.08);
 }
 
 [data-theme="glass"] .stock-card:hover {
-  background: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 [data-theme="glass"] .stock-card.active {
@@ -1108,9 +1096,9 @@ button:focus-visible {
 }
 
 [data-theme="glass"] .detail-panel {
-  background: rgba(255, 255, 255, 0.36);
-  backdrop-filter: blur(44px) saturate(2.0);
-  -webkit-backdrop-filter: blur(44px) saturate(2.0);
+  background: rgba(255, 255, 255, 0.40);
+  backdrop-filter: blur(28px) saturate(2.0);
+  -webkit-backdrop-filter: blur(28px) saturate(2.0);
   border-color: rgba(255, 255, 255, 0.55);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.8),
@@ -1118,40 +1106,34 @@ button:focus-visible {
 }
 
 [data-theme="glass"] .chart-card {
-  background: rgba(255, 255, 255, 0.20);
+  background: rgba(255, 255, 255, 0.32);
 }
 
 [data-theme="glass"] .metric-card {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.36);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 [data-theme="glass"] .active-tab-mini {
-  background: rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.56);
 }
 
 [data-theme="glass"] .search-item:hover {
-  background: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 [data-theme="glass"] .detail-backdrop {
   background: rgba(70, 90, 130, 0.20);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 /* 玻璃质感下文字与控件的对比度微调 */
 [data-theme="glass"] .ghost-btn:hover,
 [data-theme="glass"] .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.62);
 }
 
 [data-theme="glass"] .stock-card::before {
   background: linear-gradient(180deg, var(--accent-up), color-mix(in srgb, var(--accent-up) 70%, #ffffff));
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-theme="glass"] body::before {
-    animation: none;
-  }
 }

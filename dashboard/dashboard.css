@@ -484,15 +484,9 @@ button:active {
     radial-gradient(26% 30% at 16% 78%, rgba(98, 140, 220, 0.68) 0%, transparent 68%),
     radial-gradient(22% 26% at 70% 84%, rgba(70, 120, 200, 0.55) 0%, transparent 68%),
     radial-gradient(24% 28% at 28% 16%, rgba(120, 160, 245, 0.60) 0%, transparent 68%);
-  animation: glass-drift 14s ease-in-out infinite alternate;
+  /* 静态渐变光斑：移除无限 transform 动画，避免每帧重算所有毛玻璃层 */
   pointer-events: none;
   z-index: 0;
-}
-
-@keyframes glass-drift {
-  0%   { transform: translate(0, 0) scale(1); }
-  50%  { transform: translate(7%, -8%) scale(1.12); }
-  100% { transform: translate(-7%, 7%) scale(0.94); }
 }
 
 [data-theme="glass"] .app-shell {
@@ -502,8 +496,8 @@ button:active {
 }
 
 [data-theme="glass"] .panel {
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
   background: rgba(255, 255, 255, 0.58);
   border-color: rgba(255, 255, 255, 0.45);
   box-shadow:
@@ -512,9 +506,9 @@ button:active {
 }
 
 [data-theme="glass"] .sidebar {
-  background: rgba(255, 255, 255, 0.50);
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
   border-color: rgba(255, 255, 255, 0.40);
 }
 
@@ -544,10 +538,14 @@ button:active {
 
 [data-theme="glass"] .chart-card,
 [data-theme="glass"] .modal-box {
-  background: rgba(255, 255, 255, 0.60);
-  backdrop-filter: blur(36px) saturate(1.8);
-  -webkit-backdrop-filter: blur(36px) saturate(1.8);
+  background: rgba(255, 255, 255, 0.62);
   border-color: rgba(255, 255, 255, 0.50);
+}
+
+/* modal 为顶层遮罩，单独做模糊；chart-card 位于 panel 内不再嵌套模糊 */
+[data-theme="glass"] .modal-box {
+  backdrop-filter: blur(28px) saturate(1.8);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
 }
 
 [data-theme="glass"] .ghost-btn {
@@ -559,12 +557,6 @@ button:active {
 [data-theme="glass"] .ghost-btn.active-tab {
   background: rgba(255, 255, 255, 0.72);
   border-color: rgba(255, 255, 255, 0.65);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-theme="glass"] body::before {
-    animation: none;
-  }
 }
 
 .watch-form-extra {
