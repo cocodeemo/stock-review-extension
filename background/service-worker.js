@@ -27,6 +27,37 @@ let refreshTask = null;
 let refreshTaskOptions = null;
 // 预警通知内存级去重表（key: symbol:ruleId, value: 上次推送时间戳）
 const recentAlertNotified = new Map();
+// 全局互斥：串行化所有"读缓存→刷新→写缓存"操作，
+// 避免轮询/复盘/盘中预警/实时刷新并发时基于过期快照互相覆盖 marketCache
+// 注意：临界区内禁止再次调用本函数（会自死锁）
+let cacheRefreshQueue = Promise.resolve();
+
+async function refreshMarketCache(options = {}) {
+  const prev = cacheRefreshQueue;
+  let release;
+  cacheRefreshQueue = new Promise((resolve) => { release = resolve; });
+  await prev;
+  try {
+    const state = await getState();
+    if (!state.watchlist.length) {
+      return { cache: state.marketCache, state };
+    }
+    const marketCache = await refreshMarketBundleWithCache({
+      watchlist: state.watchlist,
+      existingCache: state.marketCache,
+      historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
+      forceQuotes: Boolean(options.forceQuotes),
+      forceHistories: Boolean(options.forceHistories),
+      quoteTtlMs: options.quoteTtlMs ?? CACHE_POLICY.quotePollingTtlMs,
+      historyTtlMs: CACHE_POLICY.historyTtlMs
+    });
+    marketCache.lastRefreshSource = options.sourceLabel || "scheduled";
+    await saveMarketCache(marketCache);
+    return { cache: marketCache, state };
+  } finally {
+    release();
+  }
+}
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDefaults();
@@ -130,23 +161,17 @@ async function handleRuntimeMessage(message) {
     case "get-stock-history":
       return fetchEastMoneyHistory(message.code, message.market, message.limit || 120);
     case "realtime-refresh": {
-      const state = await getState();
-      if (!state.watchlist.length) {
-        return { cacheUpdated: false };
-      }
-      const marketCache = await refreshMarketBundleWithCache({
-        watchlist: state.watchlist,
-        existingCache: state.marketCache,
-        historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
+      const { cache: marketCache, state: refreshState } = await refreshMarketCache({
         // 不强制刷新：让 quoteRealtimeTtlMs(2min) 生效，
         // 避免 Dashboard 每 5 秒轮询时对全部自选股重复发请求
         forceQuotes: false,
         forceHistories: false,
         quoteTtlMs: CACHE_POLICY.quoteRealtimeTtlMs,
-        historyTtlMs: CACHE_POLICY.historyTtlMs
+        sourceLabel: "realtime"
       });
-      marketCache.lastRefreshSource = "realtime";
-      await saveMarketCache(marketCache);
+      if (!refreshState.watchlist.length) {
+        return { cacheUpdated: false };
+      }
       return { cacheUpdated: true, lastUpdatedAt: marketCache.lastUpdatedAt };
     }
     case "get-intraday-trends":
@@ -243,22 +268,15 @@ async function refreshAndEvaluate(triggerSource = "poll", options = {}) {
 }
 
 async function performRefreshAndEvaluate(triggerSource = "poll", options = {}) {
-  const state = await getState();
+  const { cache: marketCache, state } = await refreshMarketCache({
+    forceQuotes: options.forceQuotes,
+    forceHistories: options.forceHistories,
+    quoteTtlMs: options.quoteTtlMs,
+    sourceLabel: options.sourceLabel || triggerSource
+  });
   if (!state.watchlist.length) {
     return { cacheUpdated: false, alerts: [] };
   }
-
-  const marketCache = await refreshMarketBundleWithCache({
-    watchlist: state.watchlist,
-    existingCache: state.marketCache,
-    historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
-    forceQuotes: Boolean(options.forceQuotes),
-    forceHistories: Boolean(options.forceHistories),
-    quoteTtlMs: options.quoteTtlMs ?? CACHE_POLICY.quotePollingTtlMs,
-    historyTtlMs: CACHE_POLICY.historyTtlMs
-  });
-  marketCache.lastRefreshSource = options.sourceLabel || triggerSource;
-  await saveMarketCache(marketCache);
 
   const snapshots = state.watchlist.map((stock) =>
     deriveStockSnapshot(stock, marketCache.quotes, marketCache.histories)
@@ -301,27 +319,22 @@ async function runDailyReviewReminder(force = false) {
   }
 
   // 复盘报告要求尽量使用最新收盘后数据，因此这里主动刷新一次缓存。
-  const marketCache = await refreshMarketBundleWithCache({
-    watchlist: state.watchlist,
-    existingCache: state.marketCache,
-    historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
+  const { cache: marketCache, state: freshState } = await refreshMarketCache({
     forceQuotes: true,
     forceHistories: true,
     quoteTtlMs: CACHE_POLICY.reviewQuoteMaxAgeMs,
-    historyTtlMs: CACHE_POLICY.historyTtlMs
+    sourceLabel: force ? "manual-review" : "review-reminder"
   });
-  marketCache.lastRefreshSource = force ? "manual-review" : "review-reminder";
-  await saveMarketCache(marketCache);
 
-  const snapshots = state.watchlist.map((stock) =>
+  const snapshots = freshState.watchlist.map((stock) =>
     deriveStockSnapshot(stock, marketCache.quotes, marketCache.histories)
   );
 
-  const scoreResults = evaluateScores(state.scoreRules, snapshots);
-  const report = buildDailyReport(scoreResults, snapshots, state.scoreRules);
+  const scoreResults = evaluateScores(freshState.scoreRules, snapshots);
+  const report = buildDailyReport(scoreResults, snapshots, freshState.scoreRules);
   const reports = {
     latest: report,
-    history: [report, ...(state.reports?.history || [])].slice(0, 30)
+    history: [report, ...(freshState.reports?.history || [])].slice(0, 30)
   };
   await saveReports(reports);
 
@@ -425,24 +438,19 @@ async function runIntradayScoreAlert() {
     if (!tradingDay) return { skipped: true, reason: "non-trading-day" };
   }
 
-  const marketCache = await refreshMarketBundleWithCache({
-    watchlist: state.watchlist,
-    existingCache: state.marketCache,
-    historyDays: Math.max(Number(state.settings.klineDays || 60), 60),
+  const { cache: marketCache, state: freshState } = await refreshMarketCache({
     forceQuotes: true,
     forceHistories: false,
     quoteTtlMs: CACHE_POLICY.reviewQuoteMaxAgeMs,
-    historyTtlMs: CACHE_POLICY.historyTtlMs
+    sourceLabel: "intraday-alert"
   });
-  marketCache.lastRefreshSource = "intraday-alert";
-  await saveMarketCache(marketCache);
 
-  const snapshots = state.watchlist.map((stock) =>
+  const snapshots = freshState.watchlist.map((stock) =>
     deriveStockSnapshot(stock, marketCache.quotes, marketCache.histories)
   );
 
-  const scoreResults = evaluateScores(state.scoreRules, snapshots);
-  const threshold = Number(state.settings.intradayAlertScoreThreshold ?? 3);
+  const scoreResults = evaluateScores(freshState.scoreRules, snapshots);
+  const threshold = Number(freshState.settings.intradayAlertScoreThreshold ?? 3);
   const lowScoreItems = scoreResults.filter((r) => (r.totalScore ?? 0) <= threshold);
 
   if (!lowScoreItems.length) return { skipped: true, reason: "no-low-score" };
