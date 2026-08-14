@@ -260,11 +260,26 @@ export async function fetchEastMoneyHistory(code, market, limit = 120) {
     "&fields1=f1,f2,f3,f4,f5,f6" +
     "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61" +
     "&klt=101&fqt=1" +
-    `&lmt=${safeLimit}&end=20500101`;
+    `&lmt=${safeLimit}&end=20500101` +
+    "&ut=fa5fd1943c7b386f172d6893dbfba10b";
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`EastMoney kline HTTP ${response.status} for ${secid}`);
+  // 瞬时网络抖动/限流时重试一次，避免偶发 Failed to fetch 导致详情日K缺失
+  let response = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await fetch(url);
+      if (response.ok) break;
+      lastError = new Error(`EastMoney kline HTTP ${response.status} for ${secid}`);
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  if (!response || !response.ok) {
+    throw lastError || new Error(`EastMoney kline failed for ${secid}`);
   }
   const payload = await response.json();
   const klines = payload?.data?.klines || [];

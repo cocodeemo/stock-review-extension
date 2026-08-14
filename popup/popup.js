@@ -28,7 +28,8 @@ let detailChartMode = "daily";
 let detailIntradayData = [];
 let detailCrosshairIndex = -1;
 let detailRenderState = null;
-let detailDailyFetching = false;
+// 当前正在异步拉取日K的股票代码，仅对同一只股票去重
+let detailDailyFetchingCode = null;
 
 function showDetailPanel() {
   if (detailBackdrop) detailBackdrop.hidden = false;
@@ -135,12 +136,13 @@ async function fetchDetailIntraday() {
 }
 
 async function fetchDetailDaily() {
-  if (detailDailyFetching) return;
-  detailDailyFetching = true;
+  const s = detailRenderState;
+  if (!s?.stock) return;
+  const { code, market } = s.stock;
+  // 仅对同一只股票去重，快速切换股票时新股票可并行拉取
+  if (detailDailyFetchingCode === code) return;
+  detailDailyFetchingCode = code;
   try {
-    const s = detailRenderState;
-    if (!s?.stock) return;
-    const { code, market } = s.stock;
     const response = await chrome.runtime.sendMessage({
       type: "get-stock-history",
       code,
@@ -153,14 +155,15 @@ async function fetchDetailDaily() {
     if (!cur || cur.stock?.code !== code) return;
     if (response?.ok && Array.isArray(response.data) && response.data.length) {
       cur.history = response.data;
-      cur.historyRefreshedAt = Date.now();
       // 仅当前仍处于日K模式时重绘，避免覆盖分时图
       if (detailChartMode === "daily") {
         renderDetailChart();
       }
     }
   } finally {
-    detailDailyFetching = false;
+    if (detailDailyFetchingCode === code) {
+      detailDailyFetchingCode = null;
+    }
   }
 }
 
@@ -451,7 +454,9 @@ function renderSelectedDetail(state, rankingMap, latestReport) {
   const symbol = `${selectedStock.market}${selectedStock.code}`;
   const quote = state.marketCache?.quotes?.[symbol];
   const prevDetail = detailRenderState;
-  const sameStock = prevDetail?.stock?.code === selectedStock.code;
+  const sameStock =
+    prevDetail?.stock?.code === selectedStock.code &&
+    prevDetail?.stock?.market === selectedStock.market;
   // 若该股票已异步刷新过最新日K（含最新交易日），优先保留，
   // 避免被 6h TTL 缓存中的盘中快照覆盖导致下影线等形态缺失
   const history = pickLatestHistory(

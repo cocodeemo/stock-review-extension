@@ -85,6 +85,9 @@
 
 ## 版本记录
 
+### v1.2.7
+- 修复：详情页拉取最新日K偶发 `Failed to fetch`，`fetchEastMoneyHistory` 补充东财 `ut` 参数并增加一次失败重试，降低东财限流/网络抖动导致的瞬时失败
+
 ### v1.2.6
 - 修复：详情页日K异步拉取结果被 storage 触发重建的 detailRenderState 丢弃（改为按股票代码判断），打开详情时优先保留已刷新的最新日K，彻底解决收盘后下影线等形态缺失
 - 修复：Dashboard 日K同样受 6h 缓存影响，新增 refreshDailyForSelection 在选择股票/切到日K/初始加载时异步拉取最新日K并优先渲染
