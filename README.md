@@ -85,6 +85,9 @@
 
 ## 版本记录
 
+### v1.2.9
+- 修复：v1.2.8 腾讯日K兜底后行情刷新显示 +0.00%（腾讯接口只返回 OHLCV，原实现涨跌幅填 0），现基于相邻K线计算 change/changePct/amplitude，行情刷新改为取 2 根K线保证有前收盘可算
+
 ### v1.2.8
 - 修复：扩展 Service Worker 中东财 `get-stock-history` 持续 `TypeError: Failed to fetch`（node/浏览器实测东财可达但扩展环境不可达），为日K新增腾讯 `web.ifzq.gtimg.cn` 兜底数据源，东财失败时自动切换（A股/港股均支持，成交量自动÷100对齐“手”单位）
 - 增强：东财日K失败时输出底层网络错误码（`error.cause`），便于在 SW console 定位失败原因

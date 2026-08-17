@@ -305,7 +305,7 @@ async function fetchTencentHistory(code, market, limit = 120) {
         const payload = await response.json();
         const node = payload?.data?.[symbol];
         const rows = node?.qfqday || node?.day || [];
-        return rows
+        const raw = rows
           .filter((r) => Array.isArray(r) && r[0])
           .map((r) => ({
             date: r[0],
@@ -313,13 +313,24 @@ async function fetchTencentHistory(code, market, limit = 120) {
             close: toNumber(r[2]),
             high: toNumber(r[3]),
             low: toNumber(r[4]),
-            volume: toNumber(r[5]) / 100,
-            turnover: 0,
-            amplitude: 0,
-            changePct: 0,
-            change: 0,
-            turnoverRate: 0
+            volume: toNumber(r[5]) / 100
           }));
+        // 腾讯只返回 OHLCV，涨跌幅/振幅等基于相邻K线计算，与东财口径对齐，
+        // 避免行情/详情页显示 +0.00%（涨跌丢失）
+        return raw.map((candle, index) => {
+          const prevClose = index > 0 ? raw[index - 1].close : 0;
+          const change = prevClose > 0 ? round(candle.close - prevClose, 3) : 0;
+          const changePct = prevClose > 0 ? round((change / prevClose) * 100, 2) : 0;
+          const amplitude = prevClose > 0 ? round(((candle.high - candle.low) / prevClose) * 100, 2) : 0;
+          return {
+            ...candle,
+            turnover: 0,
+            amplitude,
+            changePct,
+            change,
+            turnoverRate: 0
+          };
+        });
       }
     } catch (error) {
       lastErr = error;
@@ -542,7 +553,7 @@ export async function refreshMarketBundleWithCache({
         const symbol = buildFullSymbol(item.code, item.market);
         const market = item.market || inferMarket(item.code);
         try {
-          const freshKline = await fetchEastMoneyHistory(item.code, market, 1);
+          const freshKline = await fetchEastMoneyHistory(item.code, market, 2);
           const latest = freshKline && freshKline.length > 0 ? freshKline[freshKline.length - 1] : null;
           if (latest && latest.close > 0) {
             quotes[symbol] = buildQuoteFromKline(item, latest, freshKline, market, symbol);
@@ -572,7 +583,7 @@ export async function refreshMarketBundleWithCache({
         const symbol = buildFullSymbol(item.code, item.market);
         const market = item.market || inferMarket(item.code);
         try {
-          const klineData = await fetchEastMoneyHistory(item.code, market, 1);
+          const klineData = await fetchEastMoneyHistory(item.code, market, 2);
           const latest = klineData && klineData.length > 0 ? klineData[klineData.length - 1] : null;
           if (latest && latest.close > 0) {
             quotes[symbol] = buildQuoteFromKline(item, latest, klineData, market, symbol);
