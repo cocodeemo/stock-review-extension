@@ -405,8 +405,16 @@ function renderWatchItem(stock, state, rankingMap, latestReport) {
   const scoreClass = getScoreClass(scoreValue, totalPossibleScore);
   const activeClass = selectedCode === `${stock.market}${stock.code}` ? "active" : "";
   const hasQuote = Boolean(quote && quote.price > 0);
-  const price = hasQuote ? Number(quote.price).toFixed(2) : "—";
-  const changePct = hasQuote ? Number(quote.changePct || 0) : 0;
+  // 涨跌/价格兜底：行情缺失时回退到历史K线最新一根的真实涨跌幅与收盘价，
+  // 避免因行情接口故障显示 "+0.00%" 或 "—"
+  const historyBar = state.marketCache?.histories?.[symbol]?.at(-1);
+  const histChangePct = Number(historyBar?.changePct || 0);
+  const price = hasQuote
+    ? Number(quote.price).toFixed(2)
+    : historyBar?.close
+      ? Number(historyBar.close).toFixed(2)
+      : "—";
+  const changePct = hasQuote ? Number(quote.changePct || 0) : histChangePct;
 
   return `
     <article class="stock-card ${activeClass}" data-code="${escapeHtml(stock.code)}" data-symbol="${escapeHtml(symbol)}">
