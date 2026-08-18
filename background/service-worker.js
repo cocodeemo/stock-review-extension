@@ -21,7 +21,7 @@ import {
   saveMarketCache,
   saveReports
 } from "../shared/storage.js";
-import { formatDate, isWeekend, parseTimeToDate } from "../shared/utils.js";
+import { formatDate, isWeekend, parseTimeToDate, buildFullSymbol } from "../shared/utils.js";
 
 let refreshTask = null;
 let refreshTaskOptions = null;
@@ -315,10 +315,20 @@ async function runDailyReviewReminder(force = false) {
     return { skipped: true, reason: "watchlist-empty" };
   }
 
+  const today = formatDate(new Date());
+
+  // 判断今天是否为交易日，用于数据新鲜度校验（周末/节假日无新数据属正常）
+  let tradingToday = true;
   if (!force && state.settings.reviewOnlyTradingDays) {
-    const tradingDay = await detectTradingDay(state);
-    if (!tradingDay) {
+    tradingToday = await detectTradingDay(state);
+    if (!tradingToday) {
       return { skipped: true, reason: "non-trading-day" };
+    }
+  } else if (!force) {
+    try {
+      tradingToday = await detectTradingDay(state);
+    } catch (_) {
+      tradingToday = true;
     }
   }
 
@@ -329,6 +339,33 @@ async function runDailyReviewReminder(force = false) {
     quoteTtlMs: CACHE_POLICY.reviewQuoteMaxAgeMs,
     sourceLabel: force ? "manual-review" : "review-reminder"
   });
+
+  // 数据新鲜度校验：统计最新日K日期不是今天的股票。
+  // 刷新失败（东财→腾讯→新浪全部失败）时会静默回退旧缓存，此时打分基于旧数据，
+  // 必须在发通知前识别出来，避免把昨天/更早的数据当成今日复盘结果推送。
+  // 注意：quote.date 恒为当天，无法用于判断，以 histories 最后一根的真实K线日期为准。
+  const staleStocks = [];
+  for (const stock of freshState.watchlist) {
+    const symbol = buildFullSymbol(stock.code, stock.market);
+    const hist = marketCache.histories[symbol];
+    const latestDate = hist && hist.length ? hist[hist.length - 1].date : null;
+    if (latestDate && latestDate !== today) {
+      staleStocks.push({ name: stock.name || stock.code, code: stock.code, latestDate });
+    }
+  }
+  const staleCount = staleStocks.length;
+  const allStale = freshState.watchlist.length > 0 && staleCount === freshState.watchlist.length;
+  const dataStale = tradingToday && staleCount > 0;
+
+  // 定时通知且全部股票数据过期：不发旧数据打分通知，避免误导；
+  // 手动生成复盘（force）时仍生成，但会在通知中明确标注数据延迟。
+  if (dataStale && allStale && !force) {
+    console.warn(
+      `[sw] review skipped: all data stale (${staleCount}/${freshState.watchlist.length}) today=${today}`,
+      staleStocks
+    );
+    return { skipped: true, reason: "stale-data", staleStocks };
+  }
 
   const snapshots = freshState.watchlist.map((stock) =>
     deriveStockSnapshot(stock, marketCache.quotes, marketCache.histories)
@@ -342,12 +379,17 @@ async function runDailyReviewReminder(force = false) {
   };
   await saveReports(reports);
 
+  // 部分股票数据过期时，通知明确标注，避免被误认为今日完整数据
+  const staleSuffix = dataStale ? `（${staleCount}只数据延迟）` : "";
+  const latestStaleDate = staleStocks.length ? staleStocks[0].latestDate : null;
   await chrome.notifications.create("daily-review-report", {
     type: "basic",
     iconUrl: chrome.runtime.getURL("assets/icons/icon-128.png"),
-    title: `每日复盘提醒 ${formatDate(new Date())}`,
-    message: buildReportNotificationMessage(report),
-    contextMessage: "点击插件查看完整复盘评分排名",
+    title: `每日复盘提醒 ${today}`,
+    message: buildReportNotificationMessage(report) + staleSuffix,
+    contextMessage: dataStale
+      ? `${staleCount}只股票数据延迟（最新 ${latestStaleDate || "—"}），请手动刷新后再看`
+      : "点击插件查看完整复盘评分排名",
     priority: 2,
     requireInteraction: true
   });
