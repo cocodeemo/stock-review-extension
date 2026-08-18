@@ -111,15 +111,17 @@ export async function fetchSinaQuotes(watchlist) {
     let name, open, prevClose, price, high, low, volume, turnover, date, time;
 
     if (market === "hk") {
-      // 港股格式: ename,name,open,prevClose,price,high,low,volume,amount,...,date,time
+      // 港股格式(实测 2026-08): ename,name,open,prevClose,high,low,price,change,changePct,buy1,sell1,amount,volume,...,date,time
+      // 注意与 A 股不同：最新价在 parts[6]，成交量(股)在 parts[12]，成交额(元)在 parts[11]
       name = parts[1] || item.name || item.code;
       open = toNumber(parts[2]);
       prevClose = toNumber(parts[3]);
-      price = toNumber(parts[4]);
-      high = toNumber(parts[5]);
-      low = toNumber(parts[6]);
-      volume = toNumber(parts[7]);
-      turnover = toNumber(parts[8]);
+      high = toNumber(parts[4]);
+      low = toNumber(parts[5]);
+      price = toNumber(parts[6]);
+      // 港股成交量单位为“股”，换算为“手”(÷100)与东财口径对齐
+      volume = toNumber(parts[12]) / 100;
+      turnover = toNumber(parts[11]);
       // 兼容新浪港股实际返回：日期为 YYYY/MM/DD（可能连字符），时间为 HH:MM（可能带秒）
       const datePart = parts.find((p) => /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(p));
       const timePart = parts.find((p) => /^\d{2}:\d{2}(:\d{2})?$/.test(p));
